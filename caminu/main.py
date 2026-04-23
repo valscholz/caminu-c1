@@ -95,10 +95,11 @@ def main() -> int:
 
     # Preload heavy models so the first user turn doesn't pay cold-load latency.
     # Each preload step logs a memory snapshot so we can see what costs what.
-    log("main: preloading STT, TTS, fillers, memory, and camera")
-    stt._get_model();       log_mem("whisper_loaded")
+    log("main: preloading STT, TTS, memory, and camera")
+    stt._get_model();       log_mem("stt_loaded")
     tts._get_tts();         log_mem("kokoro_loaded")
-    fillers.preload();      log_mem("fillers_loaded")
+    # fillers.preload() skipped — fillers disabled (FILLER_AFTER_MS=0).
+    # Saves ~40 MB of pre-synth PCM cache.
     memory.preload();       log_mem("memory_preloaded")
     camera.start()          # camera warms in background; snapshot is taken async
     log("main: ready")
