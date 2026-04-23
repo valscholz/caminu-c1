@@ -80,12 +80,19 @@ class AudioInput:
 
     def __init__(self) -> None:
         import sounddevice as sd
-        from openwakeword.model import Model as WakeWordModel
         import webrtcvad
+        from .config import WAKE_MODE
 
         self._sd = sd
         self._vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
-        self._ww = WakeWordModel(wakeword_models=[WAKE_MODEL])
+        self._wake_mode = WAKE_MODE
+        # Lazy-load openWakeWord only if we're actually going to use it.
+        # Saves ~150 MB RAM in VAD-only mode.
+        if WAKE_MODE == "wake_word":
+            from openwakeword.model import Model as WakeWordModel
+            self._ww = WakeWordModel(wakeword_models=[WAKE_MODEL])
+        else:
+            self._ww = None
         self._frames_per_block = int(MIC_SAMPLE_RATE * MIC_BLOCK_MS / 1000)
 
         self._mic_index = _find_mic_index()
@@ -157,8 +164,46 @@ class AudioInput:
     # ---------------------- public API ----------------------
 
     def wait_for_wake_word(self) -> None:
-        """Block until the wake word fires. Drains any backlog first."""
+        """Block until wake activation fires. Drains any backlog first.
+
+        In "wake_word" mode: waits for openWakeWord to detect the phrase.
+        In "vad" mode: waits for sustained voice (RMS + VAD) above threshold.
+        """
         self._drain_queue()
+
+        if self._wake_mode == "vad":
+            # VAD-only wake: wait for sustained real speech.
+            from .config import FOLLOW_UP_MIN_SPEECH_MS
+            from .config import FOLLOW_UP_MIN_RMS
+            log(f"audio_in: waiting for speech (vad mode)...")
+            speech_ms = 0
+            peak_rms = 0.0
+            while not self._stop_wake.is_set():
+                block = self._next_block()
+                if block is None:
+                    continue
+                pcm = block.astype(np.int16).tobytes()
+                is_speech = self._vad.is_speech(pcm, MIC_SAMPLE_RATE)
+                if is_speech:
+                    speech_ms += MIC_BLOCK_MS
+                    block_rms = float(np.sqrt(np.mean(block.astype(np.float32) ** 2)))
+                    peak_rms = max(peak_rms, block_rms)
+                    if speech_ms >= FOLLOW_UP_MIN_SPEECH_MS and peak_rms >= FOLLOW_UP_MIN_RMS:
+                        # Capture DOA so follow-up mode can still filter later.
+                        try:
+                            from . import respeaker
+                            self.last_wake_doa = respeaker.doa()
+                        except Exception:
+                            self.last_wake_doa = None
+                        doa_str = f" doa={self.last_wake_doa}°" if self.last_wake_doa is not None else ""
+                        log(f"audio_in: WAKE (vad, rms={peak_rms:.0f}){doa_str}")
+                        return
+                else:
+                    speech_ms = 0
+                    peak_rms = 0.0
+            return
+
+        # wake_word mode (openWakeWord)
         self._ww.reset()
         log(f"audio_in: waiting for wake word ({WAKE_MODEL})...")
         last_trigger = 0.0

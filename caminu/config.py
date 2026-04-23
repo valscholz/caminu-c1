@@ -15,6 +15,13 @@ WAKE_MODEL = "hey_jarvis"
 WAKE_THRESHOLD = 0.5
 WAKE_COOLDOWN_S = 2.0     # after a trigger, ignore further wakes for this long
 
+# Wake activation mode: "wake_word" uses openWakeWord (hey_jarvis), "vad"
+# uses just loudness+voice-activity from the ReSpeaker — always listens,
+# starts a turn whenever voice is detected above FOLLOW_UP_MIN_RMS from the
+# same speaker region. vad mode frees ~150 MB (no openWakeWord ONNX) at
+# the cost of no explicit invocation phrase.
+WAKE_MODE = "vad"
+
 # VAD / endpointing -----------------------------------------------------------
 VAD_AGGRESSIVENESS = 2           # 0..3 (webrtcvad)
 VAD_SILENCE_END_MS = 500         # end turn after this much silence. 300ms cut users off mid-sentence.
@@ -40,10 +47,10 @@ WHISPER_COMPUTE = "int8"
 WHISPER_CPU_FALLBACK = False     # already on CPU; no fallback needed
 
 # STT backend: "parakeet" for GPU Parakeet TDT, "whisper" for CPU fallback.
-# Parakeet is ~6x faster per turn but eats ~1.5 GB extra RAM; on 8 GB Orin
-# Nano with Gemma + Kokoro GPU + camera + fastembed + openWakeWord all
-# resident, it OOM-killed the service. Keeping whisper as the default.
-STT_BACKEND = "whisper"
+# Parakeet is ~6x faster per turn but eats ~1.5 GB extra RAM. With WAKE_MODE
+# set to "vad" (no openWakeWord), the freed ~150 MB plus DepthAI warm path
+# optimisation might give us enough room. Try parakeet first.
+STT_BACKEND = "parakeet"
 
 # LLM (llama-server) ----------------------------------------------------------
 LLAMA_URL = "http://127.0.0.1:8080"
