@@ -135,14 +135,13 @@ def speak(text: str) -> None:
 # first audio lands sooner. Cost is slightly choppier prosody within a
 # sentence — acceptable trade for a voice agent where time-to-first-audio
 # matters more than perfect narration.
-_SENT_END = re.compile(r"([.!?;:][\"')\]]*\s+|,\s+|\s+—\s+|\n+)")
+_SENT_END = re.compile(r"([.!?][\"')\]]*\s+|\n+)")
 
 # Avoid tiny "chunks" like single-letter abbreviations or "Oh, " alone. We
 # require at least this many non-whitespace characters before emitting. Note:
 # the FIRST chunk of a reply uses a shorter threshold so the user hears
 # something as soon as possible.
-_MIN_SENTENCE_CHARS = 10
-_MIN_FIRST_CHUNK_CHARS = 4
+_MIN_SENTENCE_CHARS = 6
 
 
 class SentenceSpeaker:
@@ -164,7 +163,7 @@ class SentenceSpeaker:
     # ---- producer side (called from the LLM token callback) ----
 
     def feed(self, chunk: str) -> None:
-        """Append streamed tokens; emit any completed chunks."""
+        """Append streamed tokens; emit any completed sentences."""
         if not self._started:
             self._started = True
             self._worker.start()
@@ -175,14 +174,10 @@ class SentenceSpeaker:
             if not m:
                 return
             end = m.end()
-            chunk_out = self._buffer[:end].strip()
+            sentence = self._buffer[:end].strip()
             self._buffer = self._buffer[end:]
-            # First chunk of a reply: low threshold so user hears something
-            # ASAP. Subsequent chunks require a bit more substance so we
-            # don't keep clipping into tiny fragments.
-            min_len = _MIN_FIRST_CHUNK_CHARS if not self._first_audio_logged else _MIN_SENTENCE_CHARS
-            if len(chunk_out) >= min_len:
-                self._queue.put(chunk_out)
+            if len(sentence) >= _MIN_SENTENCE_CHARS:
+                self._queue.put(sentence)
 
     def flush(self) -> None:
         """Emit any trailing partial text as a final 'sentence'."""
