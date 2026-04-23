@@ -50,7 +50,7 @@ WHISPER_CPU_FALLBACK = False     # already on CPU; no fallback needed
 # Parakeet is ~6x faster per turn but eats ~1.5 GB extra RAM. With WAKE_MODE
 # set to "vad" (no openWakeWord), the freed ~150 MB plus DepthAI warm path
 # optimisation might give us enough room. Try parakeet first.
-STT_BACKEND = "parakeet"
+STT_BACKEND = "whisper"
 
 # LLM (llama-server) ----------------------------------------------------------
 LLAMA_URL = "http://127.0.0.1:8080"
