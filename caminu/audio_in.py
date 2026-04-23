@@ -30,19 +30,47 @@ from .config import (
 from .log import log
 
 
+def _release_pa_input(substring: str) -> None:
+    """Ask PulseAudio to suspend any input source matching substring.
+
+    PA normally holds the ALSA device exclusively; suspending it releases
+    the hardware so we can open hw:0,0 directly and preserve the native
+    channel ordering (ch0 = DSP-processed beamformed mono) that we need
+    for STT.
+    """
+    import subprocess
+    try:
+        out = subprocess.check_output(["pactl", "list", "short", "sources"], text=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and substring.lower() in parts[1].lower():
+            name = parts[1]
+            log(f"audio_in: suspending PA source {name}")
+            subprocess.run(["pactl", "suspend-source", name, "1"], check=False)
+
+
 def _find_mic_index() -> int:
+    """Resolve a mic device index for sounddevice pointing at ReSpeaker hw:0,0.
+
+    PulseAudio holds the ReSpeaker exclusively by default (PaErrorCode -9985).
+    We release PA's grip before opening the device so we get the native 6ch
+    ALSA ordering where channel 0 is the DSP-processed beamformed output.
+    """
+    _release_pa_input("SEEED")
     import sounddevice as sd
-    for i, dev in enumerate(sd.query_devices()):
+    devices = list(enumerate(sd.query_devices()))
+    for i, dev in devices:
         if (
             dev.get("max_input_channels", 0) >= MIC_CHANNELS
             and MIC_DEVICE_SUBSTRING.lower() in dev.get("name", "").lower()
         ):
             log(f"audio_in: mic device [{i}] {dev['name']}")
             return i
-    devices = "\n".join(f"  [{i}] {d['name']} (in={d['max_input_channels']})"
-                        for i, d in enumerate(sd.query_devices()))
+    listing = "\n".join(f"  [{i}] {d['name']} (in={d['max_input_channels']})" for i, d in devices)
     raise RuntimeError(
-        f"Could not find mic matching '{MIC_DEVICE_SUBSTRING}'. Available:\n{devices}"
+        f"No mic matching '{MIC_DEVICE_SUBSTRING}'. Available:\n{listing}"
     )
 
 
