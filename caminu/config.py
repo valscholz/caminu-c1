@@ -72,7 +72,7 @@ KOKORO_USE_CUDA = True           # GPU inference ~3x faster than CPU. Safe now t
 # feedback. Only fire when the LLM hasn't emitted a first token within the
 # threshold — snappy turns stay quiet. Pre-synthesized at startup so playback
 # is instant.
-FILLER_AFTER_MS = 100            # wait this long before playing a filler — nearly immediate
+FILLER_AFTER_MS = 0              # 0 disables fillers entirely. They were racing with Kokoro's aplay, causing Device-or-resource-busy errors that silenced the actual reply. With Moonshine at ~150ms STT there's not enough dead air to need a filler anyway.
 FILLER_VOLUME_DB = 6.0           # a bit quieter than main speech; unobtrusive
 FILLER_PHRASES = [
     "mm hmm",

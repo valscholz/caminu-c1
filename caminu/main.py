@@ -168,17 +168,23 @@ def main() -> int:
             first_audio_event = threading.Event()
             t_first_token: list[float] = []  # capture mutable from closure
 
-            filler_timer = threading.Timer(
-                FILLER_AFTER_MS / 1000.0,
-                lambda: (not first_audio_event.is_set()) and fillers.play_random(),
-            )
-            filler_timer.daemon = True
-            filler_timer.start()
+            # Fillers disabled when FILLER_AFTER_MS == 0 (races Kokoro for the
+            # ALSA device, causing the reply audio to be silently dropped).
+            if FILLER_AFTER_MS > 0:
+                filler_timer = threading.Timer(
+                    FILLER_AFTER_MS / 1000.0,
+                    lambda: (not first_audio_event.is_set()) and fillers.play_random(),
+                )
+                filler_timer.daemon = True
+                filler_timer.start()
+            else:
+                filler_timer = None
 
             def on_text(chunk: str) -> None:
                 if not first_audio_event.is_set():
                     first_audio_event.set()
-                    filler_timer.cancel()
+                    if filler_timer is not None:
+                        filler_timer.cancel()
                     t_first_token.append(time.time())
                 speaker.feed(chunk)
 
@@ -196,7 +202,8 @@ def main() -> int:
                     f"end_of_speech_to_first_tok={first_tok-t_stop_speaking:.2f}s"
                 )
             finally:
-                filler_timer.cancel()
+                if filler_timer is not None:
+                    filler_timer.cancel()
                 speaker.close()
 
             history = _strip_old_images(history)
