@@ -9,6 +9,8 @@ from . import announcements, camera, fillers, llm, memory, stt, tts
 from .audio_in import AudioInput
 from .config import (
     FILLER_AFTER_MS,
+    FOLLOW_UP_DOA_STRICT,
+    FOLLOW_UP_DOA_TOLERANCE_DEG,
     FOLLOW_UP_ENABLED,
     FOLLOW_UP_WINDOW_S,
     HISTORY_MAX_TURNS,
@@ -198,13 +200,37 @@ def main() -> int:
             memory.log_turn(text, reply)
             last_turn = time.time()
 
-            # Follow-up: keep the mic open briefly. If the user starts speaking,
-            # flow straight into the next turn without requiring another wake
-            # word. Otherwise return to wake-word mode.
-            prebuf = audio.wait_for_speech(FOLLOW_UP_WINDOW_S)
-            if prebuf is not None:
-                follow_up_prebuffer = prebuf
-                in_follow_up = True
+            # Follow-up mode, DOA-gated: keep the mic open briefly. Any
+            # detected speech is also checked against the ReSpeaker's
+            # direction-of-arrival — only audio coming from roughly the
+            # same angle as the wake word counts as "you continuing to
+            # talk". TV/video audio from elsewhere in the room is
+            # rejected, so the agent stops "replying" to ambient noise.
+            if FOLLOW_UP_ENABLED:
+                prebuf = audio.wait_for_speech(FOLLOW_UP_WINDOW_S)
+                if prebuf is None:
+                    in_follow_up = False
+                else:
+                    from . import respeaker
+                    current = respeaker.doa()
+                    wake_doa = audio.last_wake_doa
+                    if current is None or wake_doa is None:
+                        # DOA unavailable. Strict mode rejects, lenient accepts.
+                        if FOLLOW_UP_DOA_STRICT:
+                            log("main: follow-up rejected — DOA unavailable (strict)")
+                            in_follow_up = False
+                        else:
+                            follow_up_prebuffer = prebuf
+                            in_follow_up = True
+                    else:
+                        diff = respeaker.angle_diff(current, wake_doa)
+                        if diff <= FOLLOW_UP_DOA_TOLERANCE_DEG:
+                            log(f"main: follow-up accepted (doa {current}° vs wake {wake_doa}°, diff {diff}°)")
+                            follow_up_prebuffer = prebuf
+                            in_follow_up = True
+                        else:
+                            log(f"main: follow-up rejected — doa {current}° too far from wake {wake_doa}° (diff {diff}°)")
+                            in_follow_up = False
             else:
                 in_follow_up = False
 

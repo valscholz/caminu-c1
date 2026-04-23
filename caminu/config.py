@@ -101,8 +101,18 @@ HISTORY_MAX_TURNS = 8            # cap history length (tokens grow fast on Orin)
 # room) reliably triggers false follow-ups — the agent hears continuous
 # speech-like audio and "replies" to the video. Re-saying "Hey Jarvis"
 # is a small cost for much more reliable behavior.
-FOLLOW_UP_ENABLED = False
+FOLLOW_UP_ENABLED = True        # DOA gating below makes this safe again
 FOLLOW_UP_WINDOW_S = 8.0
+# DOA gate: the ReSpeaker v3 reports direction-of-arrival (0..359°). We
+# record the angle at the wake word and during the follow-up window we
+# only accept speech whose DOA is within this tolerance. Stops ambient
+# audio (TV, laptop video, person talking on the other side of the
+# room) from being treated as you continuing the conversation.
+FOLLOW_UP_DOA_TOLERANCE_DEG = 45
+# If True and DOA isn't readable (USB HID interface missing / failed),
+# refuse all follow-ups rather than falling back to the non-gated path.
+# Default False so the agent still works if python-usb isn't installed.
+FOLLOW_UP_DOA_STRICT = False
 
 # Paths -----------------------------------------------------------------------
 MODELS_DIR = ROOT / "models"

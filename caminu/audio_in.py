@@ -93,6 +93,8 @@ class AudioInput:
         self._q: queue.Queue[np.ndarray] = queue.Queue(maxsize=256)
         self._stop_wake = threading.Event()
         self._muted = False
+        # DOA of the last wake word, used for gated follow-up.
+        self.last_wake_doa: Optional[int] = None
 
         # webrtcvad supports 10/20/30 ms frames at 8/16/32/48 kHz; we use 20 ms @ 16 kHz
         assert MIC_BLOCK_MS in (10, 20, 30), "webrtcvad requires 10/20/30 ms blocks"
@@ -167,7 +169,15 @@ class AudioInput:
             scores = self._ww.predict(block)
             score = scores.get(WAKE_MODEL, 0.0)
             if score >= WAKE_THRESHOLD and time.time() - last_trigger > WAKE_COOLDOWN_S:
-                log(f"audio_in: WAKE (score={score:.2f})")
+                # Capture the ReSpeaker's direction-of-arrival at this moment
+                # so follow-up mode can later reject audio from other angles.
+                try:
+                    from . import respeaker
+                    self.last_wake_doa = respeaker.doa()
+                except Exception:
+                    self.last_wake_doa = None
+                doa_str = f" doa={self.last_wake_doa}°" if self.last_wake_doa is not None else ""
+                log(f"audio_in: WAKE (score={score:.2f}){doa_str}")
                 last_trigger = time.time()
                 return
 

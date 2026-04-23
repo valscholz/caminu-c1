@@ -8,6 +8,8 @@ numpy<2
 requests>=2.31
 Pillow>=10
 opencv-python-headless>=4.8
+# ReSpeaker Mic Array v3 XMOS tuning interface (DOA for follow-up gating).
+pyusb>=1.2
 # Memory embedder. We deliberately avoid sentence-transformers because it
 # pulls in torch which drags a conflicting CUDA 13 runtime that breaks
 # Kokoro's CUDA provider on JetPack 6.2 (which is CUDA 12.6).

@@ -54,6 +54,15 @@ if ! sudo test -f "$RULE"; then
   sudo udevadm trigger
 fi
 
+say "Installing ReSpeaker v3 USB tuning udev rule"
+RULE='/etc/udev/rules.d/81-respeaker.rules'
+if ! sudo test -f "$RULE"; then
+  echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="2886", ATTRS{idProduct}=="0018", MODE="0666"' \
+    | sudo tee "$RULE" >/dev/null
+  sudo udevadm control --reload-rules
+  sudo udevadm trigger
+fi
+
 # 6. SSH + avahi (for remote control) -----------------------------------------
 say "Ensuring ssh + avahi are running"
 sudo systemctl enable --now ssh avahi-daemon 2>/dev/null || true
