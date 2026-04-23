@@ -60,6 +60,13 @@ def _is_hallucination(text: str, audio_duration_s: float) -> bool:
     return False
 
 
+MAX_AUDIO_S = 10.0  # cap on input audio. Longer clips send exponentially
+# worse on CPU int8 Whisper; a 15s noisy clip can take 45s+ to decode
+# while the user is already annoyed. We truncate to the last MAX_AUDIO_S
+# so the user perceives "didn't quite catch everything" instead of a
+# minute-long silence.
+
+
 def transcribe_pcm16(pcm16: bytes, sample_rate: int = 16000) -> Optional[str]:
     """Transcribe raw s16le PCM mono audio. Returns text or None if empty
     or if the result looks like a Whisper hallucination on silence."""
@@ -69,6 +76,13 @@ def transcribe_pcm16(pcm16: bytes, sample_rate: int = 16000) -> Optional[str]:
     if audio_i16.size == 0:
         return None
     audio = audio_i16.astype(np.float32) / 32768.0
+
+    # Truncate to MAX_AUDIO_S (keep the most recent chunk — the end of a
+    # long recording is typically where the real speech was).
+    max_samples = int(MAX_AUDIO_S * sample_rate)
+    if len(audio) > max_samples:
+        log(f"stt: clipping {len(audio)/sample_rate:.1f}s -> {MAX_AUDIO_S:.0f}s")
+        audio = audio[-max_samples:]
     duration_s = len(audio) / sample_rate
 
     model = _get_model()
