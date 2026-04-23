@@ -21,3 +21,4 @@ logs/
 # Local ops
 scripts/deploy.sh.local
 .env
+.claude/
