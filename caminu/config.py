@@ -98,7 +98,7 @@ MEMORY_FACTS_FILENAME = "facts.md"
 MEMORY_CONVERSATIONS_FILENAME = "conversations.jsonl"
 MEMORY_MAX_FACTS = 40                       # cap facts injected into system prompt
 MEMORY_RECALL_K = 3                         # how many past turns `recall()` returns
-MEMORY_EMBEDDER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+MEMORY_EMBEDDER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # fastembed shorthand for the same model
 
 # System prompt ---------------------------------------------------------------
 SYSTEM_PROMPT = """You are C1, the first Caminu robot — running on-device on a Jetson Orin Nano with a ReSpeaker mic, OAK-D camera, and small speaker. The user hears you in real time.

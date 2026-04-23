@@ -136,16 +136,29 @@ def _load_conversations() -> list[dict]:
 # ---------------- Embedder + retrieval ----------------
 
 def _get_embedder():
-    """Lazy-load the sentence-transformers model on CPU."""
+    """Lazy-load a tiny MiniLM ONNX embedder via fastembed (no torch dep).
+
+    We deliberately avoid sentence-transformers because it pulls in torch,
+    which drags in a whole separate CUDA 13 runtime that conflicts with
+    our JetPack 6.2 CUDA 12.6 setup and breaks Kokoro's CUDA provider.
+    fastembed uses onnxruntime (which we already have) and the MiniLM
+    ONNX model is ~90 MB.
+    """
     global _embedder
     if _embedder is not None:
         return _embedder
     with _embedder_lock:
         if _embedder is None:
-            from sentence_transformers import SentenceTransformer
+            from fastembed import TextEmbedding
             log(f"memory: loading embedder {MEMORY_EMBEDDER_MODEL}")
-            _embedder = SentenceTransformer(MEMORY_EMBEDDER_MODEL, device="cpu")
+            _embedder = TextEmbedding(model_name=MEMORY_EMBEDDER_MODEL)
     return _embedder
+
+
+def _embed_texts(texts: list[str]) -> list[np.ndarray]:
+    """fastembed yields numpy arrays one per input text; already L2-normalized."""
+    model = _get_embedder()
+    return [np.asarray(v, dtype=np.float32) for v in model.embed(texts)]
 
 
 def _rebuild_index_if_stale() -> None:
@@ -164,10 +177,9 @@ def _rebuild_index_if_stale() -> None:
         _index_cache = []
         _index_cache_mtime = mtime
         return
-    model = _get_embedder()
     docs = [f"{e.get('user','')}\n{e.get('assistant','')}" for e in entries]
-    vecs = model.encode(docs, convert_to_numpy=True, normalize_embeddings=True)
-    _index_cache = list(zip(entries, list(vecs)))
+    vecs = _embed_texts(docs)
+    _index_cache = list(zip(entries, vecs))
     _index_cache_mtime = mtime
     log(f"memory: indexed {len(entries)} turns")
 
@@ -177,8 +189,7 @@ def recall(query: str, k: int = MEMORY_RECALL_K) -> list[dict]:
     _rebuild_index_if_stale()
     if not _index_cache:
         return []
-    model = _get_embedder()
-    q = model.encode([query], convert_to_numpy=True, normalize_embeddings=True)[0]
+    q = _embed_texts([query])[0]
     scored = [
         (float(np.dot(q, vec)), entry)
         for entry, vec in _index_cache

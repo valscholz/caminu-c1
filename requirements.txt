@@ -8,4 +8,7 @@ numpy<2
 requests>=2.31
 Pillow>=10
 opencv-python-headless>=4.8
-sentence-transformers>=3.0
+# Memory embedder. We deliberately avoid sentence-transformers because it
+# pulls in torch which drags a conflicting CUDA 13 runtime that breaks
+# Kokoro's CUDA provider on JetPack 6.2 (which is CUDA 12.6).
+fastembed>=0.4
