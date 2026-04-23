@@ -95,15 +95,18 @@ def preload() -> None:
             log(f"fillers: failed to preload {phrase!r}: {e}")
     log(f"fillers: preloaded {len(_cache)} phrases")
 
-    # Pre-warm the aplay pipe so the first filler isn't paying subprocess startup.
-    if _cache:
-        any_sr = next(iter(_cache.values()))[1]
-        _get_player(any_sr)
+    # Deliberately do NOT pre-warm a persistent aplay here — see comment in
+    # play_random(). Conflicts with the main TTS pipeline's aplay.
 
 
 def play_random() -> None:
-    """Play one cached filler phrase. Fast path: writes PCM to an already-
-    running aplay stdin. ~10-30 ms to first sample typical."""
+    """Play one cached filler phrase. Spawns a short-lived aplay, pipes the
+    pre-synthesized PCM, closes. We deliberately don't keep aplay alive
+    across calls because the main TTS path (SentenceSpeaker) also opens
+    the same ALSA device; a persistent filler aplay would block it.
+    Subprocess spawn is ~100 ms — noticeable but unavoidable without a
+    shared-device audio server.
+    """
     if not _cache:
         return
     with _cache_lock:
@@ -111,15 +114,19 @@ def play_random() -> None:
         pcm, sr = _cache[phrase]
     log(f"fillers: {phrase!r}")
     try:
-        proc = _get_player(sr)
+        proc = _spawn_player(sr)
         assert proc.stdin is not None
         proc.stdin.write(pcm)
-        proc.stdin.flush()
+        proc.stdin.close()
+        # Wait for the filler to finish so the device is free before the
+        # main TTS pipeline tries to grab it. Small blocking cost (~100-200 ms)
+        # but prevents device-busy on the next sentence.
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
     except (BrokenPipeError, ValueError, OSError) as e:
-        log(f"fillers: write failed ({e}); respawning")
-        with _player_lock:
-            global _player
-            _player = None
+        log(f"fillers: write failed: {e}")
 
 
 def _shutdown() -> None:
