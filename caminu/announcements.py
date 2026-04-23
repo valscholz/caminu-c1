@@ -165,24 +165,45 @@ def speak_farewell() -> None:
 # ---------------- WAV generator (one-shot utility) ----------------
 
 def regenerate_boot_wavs() -> None:
-    """Render the STARTUP_LINES_INSTANT lines to assets/boot_N.wav using
-    Kokoro. Idempotent — skips lines whose WAVs already exist.
-    Called by install.sh after Kokoro is available."""
+    """Render a single non-verbal 'booting' chime to assets/boot_00.wav.
+
+    Previous versions of this function rendered a pool of spoken lines
+    like 'Oh my, Caminu C1 is back.' That was misleading — the instant
+    chime plays before the mic is actually listening, and the user
+    naturally tried to talk right after hearing 'I'm back.' The spoken
+    startup greeting (post-load, after mic is live) is the real 'I'm
+    ready' signal.
+
+    Now the instant chime is a short two-note ascending tone so it's
+    unambiguous as 'booting, please wait' — not a conversational ready.
+
+    Deletes any old boot_*.wav so we don't accidentally replay the
+    spoken versions from previous installs.
+    """
     import numpy as np
     import soundfile as sf
-    from .config import (
-        KOKORO_PREGAIN_DB, KOKORO_SPEED, KOKORO_VOICE,
-    )
-    from .tts import _apply_gain_db, _get_tts
 
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-    tts = _get_tts()
-    for i, line in enumerate(STARTUP_LINES_INSTANT):
-        out = ASSETS_DIR / f"boot_{i:02d}.wav"
-        if out.exists():
-            continue
-        log(f"announce: rendering {out.name}: {line!r}")
-        samples, sr = tts.create(line, voice=KOKORO_VOICE, speed=KOKORO_SPEED, lang="en-us")
-        samples = _apply_gain_db(samples.astype(np.float32), KOKORO_PREGAIN_DB)
-        sf.write(str(out), samples, sr, subtype="PCM_16")
-    log(f"announce: boot WAVs ready ({len(STARTUP_LINES_INSTANT)} lines)")
+    # Clear any old spoken chimes (from previous behaviour).
+    for old in ASSETS_DIR.glob("boot_*.wav"):
+        old.unlink()
+
+    sr = 22050
+    def tone(freq: float, dur_s: float) -> np.ndarray:
+        t = np.linspace(0, dur_s, int(sr * dur_s), endpoint=False)
+        # Simple sine with short attack/release envelope.
+        env = np.ones_like(t)
+        n_fade = int(sr * 0.015)
+        env[:n_fade] = np.linspace(0, 1, n_fade)
+        env[-n_fade:] = np.linspace(1, 0, n_fade)
+        return 0.25 * env * np.sin(2 * np.pi * freq * t)
+
+    chime = np.concatenate([
+        tone(440.0, 0.12),          # note 1: A4
+        np.zeros(int(sr * 0.04)),   # gap
+        tone(660.0, 0.18),          # note 2: E5 (up = booting)
+    ]).astype(np.float32)
+
+    out = ASSETS_DIR / "boot_00.wav"
+    sf.write(str(out), chime, sr, subtype="PCM_16")
+    log(f"announce: wrote {out.name} (non-verbal booting chime)")
