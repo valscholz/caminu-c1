@@ -156,15 +156,24 @@ class AudioInput:
                 last_trigger = time.time()
                 return
 
-    def record_utterance(self) -> bytes:
-        """Record PCM until VAD silence endpoint or MAX_UTTERANCE_S."""
+    def record_utterance(self, prebuffer: bytes = b"") -> bytes:
+        """Record PCM until VAD silence endpoint or MAX_UTTERANCE_S.
+
+        If `prebuffer` is supplied (e.g. from wait_for_speech when it detected
+        the user already starting to speak), it's prepended to the captured
+        audio so the first syllables aren't lost.
+        """
         log("audio_in: recording utterance...")
         self._drain_queue()
-        chunks: list[bytes] = []
+        chunks: list[bytes] = [prebuffer] if prebuffer else []
         speech_ms = 0
         silence_ms = 0
         total_ms = 0
-        speaking_started = False
+        speaking_started = bool(prebuffer)
+        if prebuffer:
+            # Assume the prebuffer already contains a chunk of speech, so we're
+            # past the min-speech threshold.
+            speech_ms = VAD_MIN_SPEECH_MS
 
         while total_ms < MAX_UTTERANCE_S * 1000:
             block = self._next_block()
@@ -187,3 +196,32 @@ class AudioInput:
         pcm_all = b"".join(chunks)
         log(f"audio_in: captured {total_ms} ms (speech {speech_ms} ms)")
         return pcm_all
+
+    def wait_for_speech(self, window_s: float) -> Optional[bytes]:
+        """Listen for up to `window_s` seconds waiting for the user to start
+        speaking. Returns the initial PCM chunk that triggered detection (so
+        callers can prepend it before calling record_utterance()), or None on
+        timeout.
+
+        Used by follow-up mode: after C1 finishes speaking, we keep the mic
+        open briefly — if the user starts talking, we treat it as the next
+        turn without a new wake-word.
+        """
+        self._drain_queue()
+        deadline = time.time() + window_s
+        speech_ms = 0
+        while time.time() < deadline:
+            block = self._next_block(timeout=min(1.0, max(0.1, deadline - time.time())))
+            if block is None:
+                continue
+            pcm = block.astype(np.int16).tobytes()
+            if self._vad.is_speech(pcm, MIC_SAMPLE_RATE):
+                speech_ms += MIC_BLOCK_MS
+                if speech_ms >= VAD_MIN_SPEECH_MS:
+                    log(f"audio_in: follow-up speech detected after {speech_ms} ms")
+                    return pcm
+            else:
+                # a non-speech block resets the counter so random clicks don't accumulate
+                speech_ms = 0
+        log(f"audio_in: follow-up window expired ({window_s:.1f}s)")
+        return None

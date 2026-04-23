@@ -7,7 +7,7 @@ import time
 
 from . import camera, fillers, llm, memory, stt, tts
 from .audio_in import AudioInput
-from .config import FILLER_AFTER_MS, HISTORY_MAX_TURNS, HISTORY_TTL_S
+from .config import FILLER_AFTER_MS, FOLLOW_UP_WINDOW_S, HISTORY_MAX_TURNS, HISTORY_TTL_S
 from .log import log
 from .tts import SentenceSpeaker
 
@@ -97,18 +97,27 @@ def main() -> int:
 
     history: list[dict] = []
     last_turn = 0.0
+    follow_up_prebuffer: bytes = b""
+    in_follow_up = False
 
     while True:
         try:
-            audio.wait_for_wake_word()
+            if in_follow_up:
+                # We're continuing a conversation: skip wake-word and use the
+                # prebuffered speech chunk that triggered the follow-up.
+                log("main: follow-up turn")
+            else:
+                audio.wait_for_wake_word()
 
             if time.time() - last_turn > HISTORY_TTL_S:
                 history = []
 
-            pcm = audio.record_utterance()
+            pcm = audio.record_utterance(prebuffer=follow_up_prebuffer)
+            follow_up_prebuffer = b""
             text = stt.transcribe_pcm16(pcm)
             if not text:
                 log("main: empty transcription, back to wake-word")
+                in_follow_up = False
                 continue
 
             speaker = SentenceSpeaker()
@@ -142,6 +151,16 @@ def main() -> int:
             history = _trim_history(history)
             memory.log_turn(text, reply)
             last_turn = time.time()
+
+            # Follow-up: keep the mic open briefly. If the user starts speaking,
+            # flow straight into the next turn without requiring another wake
+            # word. Otherwise return to wake-word mode.
+            prebuf = audio.wait_for_speech(FOLLOW_UP_WINDOW_S)
+            if prebuf is not None:
+                follow_up_prebuffer = prebuf
+                in_follow_up = True
+            else:
+                in_follow_up = False
 
         except KeyboardInterrupt:
             _shutdown(None, None)

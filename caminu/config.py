@@ -79,6 +79,12 @@ CAMERA_JPEG_QUALITY = 85
 HISTORY_TTL_S = 120              # reset conversation after this much idle
 HISTORY_MAX_TURNS = 8            # cap history length (tokens grow fast on Orin)
 
+# Follow-up mode --------------------------------------------------------------
+# After C1 finishes speaking, keep the mic open for this long. If the user
+# starts speaking in that window, we continue the conversation without
+# requiring another "Hey Jarvis". If nothing comes, fall back to wake-word.
+FOLLOW_UP_WINDOW_S = 8.0
+
 # Paths -----------------------------------------------------------------------
 MODELS_DIR = ROOT / "models"
 KOKORO_DIR = MODELS_DIR / "kokoro"
