@@ -108,7 +108,7 @@ FOLLOW_UP_WINDOW_S = 8.0
 # only accept speech whose DOA is within this tolerance. Stops ambient
 # audio (TV, laptop video, person talking on the other side of the
 # room) from being treated as you continuing the conversation.
-FOLLOW_UP_DOA_TOLERANCE_DEG = 60   # XVF3000 DOA jitters 10-20° at rest; 60 gives natural head/body movement margin while still rejecting cross-room sources
+FOLLOW_UP_DOA_TOLERANCE_DEG = 120  # XVF3000 jitter on this hardware is larger than spec (~60-70° seen between turns of the same speaker). Wider tolerance means DOA gates out clearly-wrong-direction sources only (e.g. TV on the opposite wall); per-turn loudness (RMS) + XVF3000 VOICEACTIVITY do the fine-grained filtering.
 # When a follow-up is accepted, blend its DOA into the reference angle so
 # the gate tracks slow movement. 0.0 = never update (hard lock to wake
 # angle), 1.0 = always use latest (no history). 0.3 works in practice.

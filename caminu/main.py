@@ -225,6 +225,11 @@ def main() -> int:
                         from . import respeaker
                         current = respeaker.doa()
                         wake_doa = audio.last_wake_doa
+                        # Secondary: does the XVF3000 itself think this is
+                        # human voice? It has a dedicated VOICEACTIVITY
+                        # flag tuned for speech specifically (distinct from
+                        # webrtcvad's generic "speech-like" classifier).
+                        voice_active = respeaker.get_tuning().voice_active()
                         if current is None or wake_doa is None:
                             if FOLLOW_UP_DOA_STRICT:
                                 log("main: follow-up rejected — DOA unavailable (strict)")
