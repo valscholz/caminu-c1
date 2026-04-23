@@ -29,8 +29,10 @@ FOLLOW_UP_MIN_SPEECH_MS = 500   # was 300; higher to filter stray clicks/breath
 
 # STT -------------------------------------------------------------------------
 WHISPER_MODEL = "base.en"
-WHISPER_DEVICE = "cpu"           # int8 on CPU is ~1.5s per 5s of audio on Orin
-WHISPER_COMPUTE = "int8"
+WHISPER_DEVICE = "cuda"          # GPU fp16 is ~10x faster than CPU int8
+WHISPER_COMPUTE = "float16"
+# Auto-fallback to CPU int8 if CUDA init fails (e.g. cuBLAS/cuDNN mismatch).
+WHISPER_CPU_FALLBACK = True
 
 # LLM (llama-server) ----------------------------------------------------------
 LLAMA_URL = "http://127.0.0.1:8080"

@@ -6,7 +6,7 @@ from typing import Optional
 
 import numpy as np
 
-from .config import WHISPER_COMPUTE, WHISPER_DEVICE, WHISPER_MODEL
+from .config import WHISPER_COMPUTE, WHISPER_CPU_FALLBACK, WHISPER_DEVICE, WHISPER_MODEL
 from .log import log
 
 
@@ -18,11 +18,23 @@ def _get_model():
     if _model is not None:
         return _model
     from faster_whisper import WhisperModel
-    log(f"stt: loading {WHISPER_MODEL} on {WHISPER_DEVICE} ({WHISPER_COMPUTE})")
-    _model = WhisperModel(
-        WHISPER_MODEL, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE
-    )
-    return _model
+
+    # Try the configured device first (typically CUDA float16). If CUDA init
+    # blows up — cuDNN/cuBLAS version mismatch, VRAM exhausted, driver bug —
+    # fall back to CPU int8 so the agent still functions, just slower.
+    tried_cuda = WHISPER_DEVICE != "cpu"
+    try:
+        log(f"stt: loading {WHISPER_MODEL} on {WHISPER_DEVICE} ({WHISPER_COMPUTE})")
+        _model = WhisperModel(
+            WHISPER_MODEL, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE
+        )
+        return _model
+    except Exception as e:
+        if tried_cuda and WHISPER_CPU_FALLBACK:
+            log(f"stt: CUDA load failed ({e}); falling back to CPU int8")
+            _model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+            return _model
+        raise
 
 
 # Whisper base.en's well-known hallucinations on short / silent / noisy audio.
