@@ -68,6 +68,20 @@ say "Ensuring ssh + avahi are running"
 sudo systemctl enable --now ssh avahi-daemon 2>/dev/null || true
 
 # 7. Swap ----------------------------------------------------------------------
+say "Setting Jetson to MAXN_SUPER power mode + locking clocks to max"
+# The Orin Nano Super ships with the 25W mode as default. MAXN_SUPER
+# unlocks +29% CPU, +11% GPU, +50% memory bandwidth — huge for the
+# unified-memory inference workloads we're running. Persistent across
+# reboots (nvpmodel persists; jetson_clocks via systemd unit below).
+sudo nvpmodel -m 2 || true
+sudo jetson_clocks || true
+# Install the jetson_clocks service so max clocks apply every boot.
+if [ ! -f /etc/systemd/system/jetson_clocks.service ]; then
+  sudo cp systemd/jetson_clocks.service /etc/systemd/system/jetson_clocks.service
+  sudo systemctl daemon-reload
+  sudo systemctl enable jetson_clocks.service
+fi
+
 say "Ensuring 8 GB swap is available"
 if [ "$(free -g | awk '/Swap/ {print $2}')" -lt 7 ]; then
   if [ ! -f /swapfile ]; then

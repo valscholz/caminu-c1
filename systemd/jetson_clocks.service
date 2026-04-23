@@ -1,0 +1,13 @@
+[Unit]
+Description=Lock Jetson clocks to max (pairs with MAXN_SUPER power mode)
+# Runs after the power model is set, so jetson_clocks sees the higher
+# max frequencies MAXN_SUPER unlocks.
+After=nvpmodel.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/jetson_clocks
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
