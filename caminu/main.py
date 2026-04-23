@@ -12,6 +12,43 @@ from .log import log
 from .tts import SentenceSpeaker
 
 
+def _strip_old_images(history: list[dict]) -> list[dict]:
+    """Replace bulky base64 image parts in completed turns with a text stub.
+
+    Each OAK-D photo becomes ~256 vision tokens + ~100 KB of base64 in the
+    message. After Gemma has replied about an image, the raw pixels add
+    nothing — her text description stays in history as an assistant message.
+    Keeping the pixels causes two problems: the KV cache bloats (~25% of
+    context on a multi-vision conversation) and the mmproj compute buffer
+    can OOM llama-server ('failed to allocate compute pp buffers').
+
+    We only strip *completed* turns: the last user message keeps its image
+    since Gemma may still be mid-turn processing it.
+    """
+    if not history:
+        return history
+    # Find the last user message — that one is "current", everything else is past
+    last_user_idx = max(
+        (i for i, m in enumerate(history) if m.get("role") == "user"),
+        default=-1,
+    )
+    out = []
+    for i, msg in enumerate(history):
+        content = msg.get("content")
+        if (
+            isinstance(content, list)
+            and i != last_user_idx
+            and any(p.get("type") == "image_url" for p in content if isinstance(p, dict))
+        ):
+            # collapse to a simple text placeholder
+            texts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+            stub = " ".join(t for t in texts if t) or "[photo shown to Caminu]"
+            out.append({**msg, "content": stub + " [photo removed from context to save memory]"})
+        else:
+            out.append(msg)
+    return out
+
+
 def _trim_history(history: list[dict]) -> list[dict]:
     """Keep system prompt + last N turns to cap context size on 8 GB Orin."""
     if not history:
@@ -100,6 +137,7 @@ def main() -> int:
                 filler_timer.cancel()
                 speaker.close()
 
+            history = _strip_old_images(history)
             history = _trim_history(history)
             last_turn = time.time()
 
