@@ -98,6 +98,9 @@ fi
 source .venv/bin/activate
 pip install --quiet --upgrade pip wheel
 pip install --quiet -r requirements.txt
+# Replace the CPU onnxruntime that kokoro-onnx/openwakeword pull in with the
+# Jetson-specific GPU wheel so TTS runs on CUDA. Idempotent.
+pip install --quiet --upgrade --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 onnxruntime-gpu
 
 # 10. Model downloads ----------------------------------------------------------
 say "Downloading Gemma 4 E2B Q4_K_M GGUF + mmproj"

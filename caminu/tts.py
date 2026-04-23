@@ -24,6 +24,7 @@ from .config import (
     KOKORO_MODEL_FILENAME,
     KOKORO_PREGAIN_DB,
     KOKORO_SPEED,
+    KOKORO_USE_CUDA,
     KOKORO_VOICE,
     KOKORO_VOICES_FILENAME,
     PULSE_OUTPUT_SINK,
@@ -41,8 +42,33 @@ def _get_tts():
     from kokoro_onnx import Kokoro
     model_path = KOKORO_DIR / KOKORO_MODEL_FILENAME
     voices_path = KOKORO_DIR / KOKORO_VOICES_FILENAME
-    log(f"tts: loading Kokoro from {model_path} + {voices_path}")
-    _tts = Kokoro(str(model_path), str(voices_path))
+
+    providers = None
+    if KOKORO_USE_CUDA:
+        try:
+            import onnxruntime
+            available = onnxruntime.get_available_providers()
+            if "CUDAExecutionProvider" in available:
+                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        except Exception:
+            providers = None
+
+    log(f"tts: loading Kokoro from {model_path} (providers={providers or 'cpu default'})")
+    try:
+        # Newer kokoro-onnx accepts a providers kwarg; older builds don't.
+        _tts = Kokoro(str(model_path), str(voices_path), providers=providers) \
+            if providers is not None else Kokoro(str(model_path), str(voices_path))
+    except TypeError:
+        # kwarg not supported in this kokoro-onnx version; manually set the session
+        _tts = Kokoro(str(model_path), str(voices_path))
+        if providers is not None:
+            try:
+                import onnxruntime as ort
+                sess = ort.InferenceSession(str(model_path), providers=providers)
+                _tts.sess = sess  # type: ignore[attr-defined]
+                log(f"tts: swapped Kokoro session to providers={providers}")
+            except Exception as e:
+                log(f"tts: CUDA provider swap failed, staying on CPU: {e}")
     return _tts
 
 
