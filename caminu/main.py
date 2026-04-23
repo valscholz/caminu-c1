@@ -9,6 +9,7 @@ from . import announcements, camera, fillers, llm, memory, stt, tts
 from .audio_in import AudioInput
 from .config import (
     FILLER_AFTER_MS,
+    FOLLOW_UP_DOA_SMOOTHING,
     FOLLOW_UP_DOA_STRICT,
     FOLLOW_UP_DOA_TOLERANCE_DEG,
     FOLLOW_UP_ENABLED,
@@ -236,6 +237,13 @@ def main() -> int:
                             diff = respeaker.angle_diff(current, wake_doa)
                             if diff <= FOLLOW_UP_DOA_TOLERANCE_DEG:
                                 log(f"main: follow-up accepted (doa {current}° vs wake {wake_doa}°, diff {diff}°, rms={rms:.0f})")
+                                # Blend the reference angle toward the latest
+                                # so a slow-moving user stays within range.
+                                # Handles the 0°/360° wrap by rotating to a
+                                # common frame before averaging.
+                                delta = ((current - wake_doa + 540) % 360) - 180  # -180..180
+                                new_wake = int((wake_doa + delta * FOLLOW_UP_DOA_SMOOTHING)) % 360
+                                audio.last_wake_doa = new_wake
                                 follow_up_prebuffer = prebuf
                                 in_follow_up = True
                             else:

@@ -108,7 +108,11 @@ FOLLOW_UP_WINDOW_S = 8.0
 # only accept speech whose DOA is within this tolerance. Stops ambient
 # audio (TV, laptop video, person talking on the other side of the
 # room) from being treated as you continuing the conversation.
-FOLLOW_UP_DOA_TOLERANCE_DEG = 45
+FOLLOW_UP_DOA_TOLERANCE_DEG = 60   # XVF3000 DOA jitters 10-20° at rest; 60 gives natural head/body movement margin while still rejecting cross-room sources
+# When a follow-up is accepted, blend its DOA into the reference angle so
+# the gate tracks slow movement. 0.0 = never update (hard lock to wake
+# angle), 1.0 = always use latest (no history). 0.3 works in practice.
+FOLLOW_UP_DOA_SMOOTHING = 0.3
 # If True and DOA isn't readable (USB HID interface missing / failed),
 # refuse all follow-ups rather than falling back to the non-gated path.
 # Default False so the agent still works if python-usb isn't installed.
