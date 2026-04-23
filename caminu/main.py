@@ -92,6 +92,15 @@ def main() -> int:
     log("main: ready")
     log_mem("ready")
 
+    # Soft memory warning. We're not going to take action — this is a flag
+    # for humans reading the log. If avail drops below this regularly,
+    # something's drifted.
+    from .log import _read_meminfo
+    mi = _read_meminfo()
+    avail_mb = mi.get("MemAvailable", 0) / 1024
+    if avail_mb and avail_mb < 800:
+        log(f"main: WARN low memory at ready ({avail_mb:.0f} MB avail)")
+
     # Once everything above is ready, speak a fresh time-of-day greeting.
     # This plays after the instant chime and replaces the generic cached
     # line with a contextual one.
