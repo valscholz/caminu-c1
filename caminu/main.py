@@ -14,6 +14,7 @@ from .config import (
     FOLLOW_UP_DOA_TOLERANCE_DEG,
     FOLLOW_UP_ENABLED,
     FOLLOW_UP_MIN_RMS,
+    FOLLOW_UP_REQUIRE_VOICE_ACTIVE,
     FOLLOW_UP_WINDOW_S,
     HISTORY_MAX_TURNS,
     HISTORY_TTL_S,
@@ -222,38 +223,31 @@ def main() -> int:
                         log(f"main: follow-up rejected — quiet (rms={rms:.0f} < {FOLLOW_UP_MIN_RMS})")
                         in_follow_up = False
                     else:
+                        # Query the XVF3000's own speech detector. This is
+                        # our primary signal for "real human voice right
+                        # now vs. loud non-speech noise".
                         from . import respeaker
-                        current = respeaker.doa()
-                        wake_doa = audio.last_wake_doa
-                        # Secondary: does the XVF3000 itself think this is
-                        # human voice? It has a dedicated VOICEACTIVITY
-                        # flag tuned for speech specifically (distinct from
-                        # webrtcvad's generic "speech-like" classifier).
                         voice_active = respeaker.get_tuning().voice_active()
-                        if current is None or wake_doa is None:
-                            if FOLLOW_UP_DOA_STRICT:
-                                log("main: follow-up rejected — DOA unavailable (strict)")
-                                in_follow_up = False
-                            else:
-                                log(f"main: follow-up accepted — DOA unavailable, rms={rms:.0f}")
-                                follow_up_prebuffer = prebuf
-                                in_follow_up = True
+                        # DOA is logged for visibility but doesn't gate —
+                        # too jittery for this hardware.
+                        doa_cur = respeaker.doa()
+                        doa_wake = audio.last_wake_doa
+
+                        if FOLLOW_UP_REQUIRE_VOICE_ACTIVE and voice_active is False:
+                            log(
+                                f"main: follow-up rejected — XVF3000 says no voice "
+                                f"(rms={rms:.0f}, doa={doa_cur}°/wake={doa_wake}°)"
+                            )
+                            in_follow_up = False
                         else:
-                            diff = respeaker.angle_diff(current, wake_doa)
-                            if diff <= FOLLOW_UP_DOA_TOLERANCE_DEG:
-                                log(f"main: follow-up accepted (doa {current}° vs wake {wake_doa}°, diff {diff}°, rms={rms:.0f})")
-                                # Blend the reference angle toward the latest
-                                # so a slow-moving user stays within range.
-                                # Handles the 0°/360° wrap by rotating to a
-                                # common frame before averaging.
-                                delta = ((current - wake_doa + 540) % 360) - 180  # -180..180
-                                new_wake = int((wake_doa + delta * FOLLOW_UP_DOA_SMOOTHING)) % 360
-                                audio.last_wake_doa = new_wake
-                                follow_up_prebuffer = prebuf
-                                in_follow_up = True
-                            else:
-                                log(f"main: follow-up rejected — doa {current}° too far from wake {wake_doa}° (diff {diff}°, rms={rms:.0f})")
-                                in_follow_up = False
+                            va_str = "yes" if voice_active else ("unknown" if voice_active is None else "no")
+                            log(
+                                f"main: follow-up accepted "
+                                f"(rms={rms:.0f}, voice_active={va_str}, "
+                                f"doa={doa_cur}°/wake={doa_wake}°)"
+                            )
+                            follow_up_prebuffer = prebuf
+                            in_follow_up = True
             else:
                 in_follow_up = False
 
