@@ -141,7 +141,7 @@ FOLLOW_UP_REQUIRE_VOICE_ACTIVE = True
 # conversational speech from ~1m away sits around 100-300 RMS, loud
 # close-talk is 1000+. 80 gates out ambient breath (typ. <40) and keeps
 # the door open for real follow-up attempts.
-FOLLOW_UP_MIN_RMS = 80
+FOLLOW_UP_MIN_RMS = 40   # 80 was still rejecting real follow-ups at rms=61. Since we also require XVF3000 voice_active=yes (chip-level human-voice detector), the RMS gate only needs to filter out non-speech ambient, which sits well below 40.
 
 # Paths -----------------------------------------------------------------------
 MODELS_DIR = ROOT / "models"
