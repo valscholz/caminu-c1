@@ -117,6 +117,11 @@ FOLLOW_UP_DOA_SMOOTHING = 0.3
 # refuse all follow-ups rather than falling back to the non-gated path.
 # Default False so the agent still works if python-usb isn't installed.
 FOLLOW_UP_DOA_STRICT = False
+# Primary follow-up gate on this hardware: the XVF3000's built-in speech
+# detector. Much better than webrtcvad at ignoring loud non-speech noises
+# (door slams, music, glass). If the chip isn't readable we accept (we
+# still have RMS as a second gate).
+FOLLOW_UP_REQUIRE_VOICE_ACTIVE = True
 # Minimum RMS level in the detected-speech prebuffer before we even
 # consider it as a real follow-up. 16-bit PCM RMS — 200 is quiet speech,
 # 500+ is normal conversational volume. Rejects ambient fan/breath that
