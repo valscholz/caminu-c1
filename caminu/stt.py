@@ -71,6 +71,26 @@ def _load_parakeet():
     )
 
 
+def _load_moonshine():
+    """Moonshine tiny on CUDA. Uses a module-level monkey-patch on
+    onnxruntime.InferenceSession because Moonshine's MoonshineOnnxModel
+    doesn't expose a `providers` kwarg; by default ORT picks TensorRT
+    first which fails on Moonshine's dynamic shapes."""
+    import onnxruntime as ort
+    if not getattr(ort, "_caminu_providers_patched", False):
+        _orig = ort.InferenceSession
+        def _S(*args, **kwargs):
+            kwargs.setdefault("providers", ["CUDAExecutionProvider", "CPUExecutionProvider"])
+            return _orig(*args, **kwargs)
+        ort.InferenceSession = _S
+        ort._caminu_providers_patched = True
+    from moonshine_onnx import MoonshineOnnxModel, load_tokenizer
+    log("stt: loading Moonshine tiny on CUDA (TRT skipped via monkey-patch)")
+    model = MoonshineOnnxModel(model_name="moonshine/tiny")
+    tok = load_tokenizer()
+    return ("moonshine", model, tok)
+
+
 def _load_whisper():
     from faster_whisper import WhisperModel
     log(f"stt: loading Whisper {WHISPER_MODEL} on {WHISPER_DEVICE} ({WHISPER_COMPUTE})")
@@ -88,6 +108,13 @@ def _get_model():
             return _model
         except Exception as e:
             log(f"stt: Parakeet load failed ({type(e).__name__}: {str(e)[:120]}); falling back to Whisper")
+    elif STT_BACKEND == "moonshine":
+        try:
+            _model = _load_moonshine()
+            _backend = "moonshine"
+            return _model
+        except Exception as e:
+            log(f"stt: Moonshine load failed ({type(e).__name__}: {str(e)[:120]}); falling back to Whisper")
     _model = _load_whisper()
     _backend = "whisper"
     return _model
@@ -114,6 +141,13 @@ def transcribe_pcm16(pcm16: bytes, sample_rate: int = 16000) -> Optional[str]:
     if _backend == "parakeet":
         # onnx-asr accepts a numpy array of float32 mono samples at 16 kHz.
         text = model.recognize(audio).strip()
+    elif _backend == "moonshine":
+        # Model returns a list of token id sequences; tokenizer decodes batch.
+        tag, m, tok = model
+        # Moonshine wants audio reshaped (1, N) in its load_audio path; we
+        # already have 1D float32, same thing for the model.
+        ids = m.generate(audio[np.newaxis, :] if audio.ndim == 1 else audio)
+        text = tok.decode_batch(ids)[0].strip() if isinstance(ids, list) or hasattr(ids, "__iter__") else ""
     else:
         # faster-whisper path
         segments, _info = model.transcribe(

@@ -46,11 +46,12 @@ WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE = "int8"
 WHISPER_CPU_FALLBACK = False     # already on CPU; no fallback needed
 
-# STT backend: "parakeet" for GPU Parakeet TDT, "whisper" for CPU fallback.
-# Parakeet is ~6x faster per turn but eats ~1.5 GB extra RAM. With WAKE_MODE
-# set to "vad" (no openWakeWord), the freed ~150 MB plus DepthAI warm path
-# optimisation might give us enough room. Try parakeet first.
-STT_BACKEND = "whisper"
+# STT backend: "whisper" | "parakeet" | "moonshine".
+# Whisper tiny.en CPU on MAXN: ~700ms warm, safe, never OOMs.
+# Parakeet GPU: ~100ms warm; OOMs on 8GB with Gemma + Kokoro GPU + camera.
+# Moonshine GPU: ~150ms warm; similar footprint to Parakeet — test in
+# actual agent to see if it fits. Auto-falls-back to Whisper on load fail.
+STT_BACKEND = "moonshine"
 
 # LLM (llama-server) ----------------------------------------------------------
 LLAMA_URL = "http://127.0.0.1:8080"
