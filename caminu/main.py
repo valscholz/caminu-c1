@@ -4,7 +4,7 @@ import signal
 import sys
 import time
 
-from . import llm, stt
+from . import llm, stt, tts
 from .audio_in import AudioInput
 from .config import HISTORY_MAX_TURNS, HISTORY_TTL_S
 from .log import log
@@ -36,6 +36,13 @@ def main() -> int:
         log("FATAL: llama-server not reachable. Is run.sh starting it correctly?")
         return 1
     log("llm: llama-server is up")
+
+    # Preload heavy models so the first user turn doesn't pay cold-load latency.
+    # Whisper ~5s (CPU int8), Kokoro ~6s (ONNX + voice embeddings).
+    log("main: preloading STT and TTS models")
+    stt._get_model()   # warm faster-whisper
+    tts._get_tts()     # warm Kokoro
+    log("main: models preloaded")
 
     audio = AudioInput()
     audio.start()
