@@ -23,7 +23,9 @@ if [ ! -f "$UNIT" ]; then
 fi
 
 mkdir -p "$HOME/.config/systemd/user"
-cp "$UNIT" "$HOME/.config/systemd/user/caminu.service"
+# Always overwrite — lets this script double as 'refresh the unit after
+# a repo update that changed caminu.service.'
+cp -f "$UNIT" "$HOME/.config/systemd/user/caminu.service"
 
 systemctl --user daemon-reload
 systemctl --user enable caminu.service
