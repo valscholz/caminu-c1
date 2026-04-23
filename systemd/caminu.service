@@ -1,0 +1,27 @@
+[Unit]
+Description=Caminu C1 — local voice + vision AI agent
+# Wait for network + PulseAudio user session before starting.
+# Using network-online.target so we don't fight DHCP on first boot.
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/caminu-c1
+# Make sure CUDA is on PATH for non-interactive shells.
+Environment=PATH=/usr/local/cuda-12.6/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64
+# run.sh activates the venv and handles the rest.
+ExecStart=/bin/bash -lc './run.sh'
+# If the agent crashes, come back up after a short pause.
+Restart=on-failure
+RestartSec=5s
+# Give model loading time on cold boot (~45s is comfortable).
+TimeoutStartSec=120
+# Let a normal SIGTERM finish the current turn cleanly.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
