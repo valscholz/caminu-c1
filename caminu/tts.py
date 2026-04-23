@@ -1,10 +1,20 @@
 """Kokoro TTS -> PulseAudio paplay.
 
-Applies a digital pre-gain so the small Monk Makes speaker is loud enough,
-then streams to the ReSpeaker's analog output sink.
+Two ways to use:
+- speak(text): one-shot blocking synthesis + playback.
+- SentenceSpeaker(): stream-friendly. Feed token chunks via feed(); it
+  emits complete sentences to Kokoro as soon as they land, writing the
+  resulting PCM to a persistent paplay subprocess. Call flush() at
+  end-of-stream and close() when the turn is fully over.
+
+Pre-gain is applied before int16 conversion so the small Monk Makes
+speaker gets meaningful volume without clipping.
 """
 from __future__ import annotations
+import re
 import subprocess
+import threading
+from queue import Queue
 from typing import Optional
 
 import numpy as np
@@ -43,24 +53,149 @@ def _apply_gain_db(audio: np.ndarray, gain_db: float) -> np.ndarray:
     return np.clip(audio * scale, -1.0, 1.0)
 
 
+def _synthesize(text: str) -> tuple[bytes, int]:
+    """Kokoro synthesize -> (int16 mono PCM bytes, sample_rate)."""
+    tts = _get_tts()
+    samples, sr = tts.create(
+        text, voice=KOKORO_VOICE, speed=KOKORO_SPEED, lang="en-us"
+    )
+    samples = _apply_gain_db(samples.astype(np.float32), KOKORO_PREGAIN_DB)
+    return (samples * 32767.0).astype(np.int16).tobytes(), sr
+
+
+def _paplay_process(sample_rate: int) -> subprocess.Popen:
+    return subprocess.Popen(
+        [
+            "paplay",
+            f"--device={PULSE_OUTPUT_SINK}",
+            "--raw",
+            "--format=s16le",
+            f"--rate={sample_rate}",
+            "--channels=1",
+        ],
+        stdin=subprocess.PIPE,
+    )
+
+
+# ---------------- blocking one-shot (retained for convenience) -----------------
+
 def speak(text: str) -> None:
-    """Synthesize `text` with Kokoro and play through PULSE_OUTPUT_SINK."""
+    """Synthesize `text` with Kokoro and play through the speaker. Blocking."""
     text = text.strip()
     if not text:
         return
     log(f"tts: speak {text!r}")
+    pcm, sr = _synthesize(text)
+    proc = _paplay_process(sr)
+    assert proc.stdin is not None
+    proc.stdin.write(pcm)
+    proc.stdin.close()
+    proc.wait()
 
-    tts = _get_tts()
-    samples, sr = tts.create(text, voice=KOKORO_VOICE, speed=KOKORO_SPEED, lang="en-us")
-    samples = _apply_gain_db(samples.astype(np.float32), KOKORO_PREGAIN_DB)
-    pcm16 = (samples * 32767.0).astype(np.int16).tobytes()
 
-    cmd = [
-        "paplay",
-        f"--device={PULSE_OUTPUT_SINK}",
-        "--raw",
-        "--format=s16le",
-        f"--rate={sr}",
-        "--channels=1",
-    ]
-    subprocess.run(cmd, input=pcm16, check=False)
+# ---------------- streaming speaker --------------------------------------------
+
+# Split on sentence-final punctuation followed by a boundary (whitespace or EOL).
+# We keep the punctuation with the preceding sentence by using a lookbehind-ish trick.
+_SENT_END = re.compile(r"([.!?][\"')\]]*\s+|\n+)")
+
+# Avoid tiny "sentences" like single-letter abbreviations — wait for at least this
+# many non-whitespace characters before we consider emitting a sentence.
+_MIN_SENTENCE_CHARS = 6
+
+
+class SentenceSpeaker:
+    """Buffers streamed tokens, emits sentences to Kokoro -> paplay as they land.
+
+    A worker thread owns the Kokoro/paplay pipeline so the caller (LLM
+    callback) never blocks on synthesis.
+    """
+
+    def __init__(self) -> None:
+        self._buffer = ""
+        self._queue: Queue[Optional[str]] = Queue()
+        self._worker = threading.Thread(target=self._run, daemon=True)
+        self._proc: Optional[subprocess.Popen] = None
+        self._proc_sr: Optional[int] = None
+        self._started = False
+        self._first_audio_logged = False
+
+    # ---- producer side (called from the LLM token callback) ----
+
+    def feed(self, chunk: str) -> None:
+        """Append streamed tokens; emit any completed sentences."""
+        if not self._started:
+            self._started = True
+            self._worker.start()
+
+        self._buffer += chunk
+        while True:
+            m = _SENT_END.search(self._buffer)
+            if not m:
+                return
+            end = m.end()
+            sentence = self._buffer[:end].strip()
+            self._buffer = self._buffer[end:]
+            if len(sentence) >= _MIN_SENTENCE_CHARS:
+                self._queue.put(sentence)
+
+    def flush(self) -> None:
+        """Emit any trailing partial text as a final 'sentence'."""
+        tail = self._buffer.strip()
+        self._buffer = ""
+        if tail:
+            self._queue.put(tail)
+
+    def close(self) -> None:
+        """Signal end-of-turn; block until all audio has played."""
+        if not self._started:
+            return
+        self._queue.put(None)  # sentinel
+        self._worker.join()
+        if self._proc is not None:
+            try:
+                if self._proc.stdin:
+                    self._proc.stdin.close()
+                self._proc.wait()
+            except Exception:
+                pass
+            self._proc = None
+            self._proc_sr = None
+
+    # ---- consumer side (worker thread) ----
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            try:
+                pcm, sr = _synthesize(item)
+            except Exception as e:
+                log(f"tts: synth failed on {item!r}: {e}")
+                continue
+
+            if self._proc is None or self._proc_sr != sr:
+                # Close any prior process (different sample rate) first.
+                if self._proc is not None:
+                    try:
+                        if self._proc.stdin:
+                            self._proc.stdin.close()
+                        self._proc.wait()
+                    except Exception:
+                        pass
+                self._proc = _paplay_process(sr)
+                self._proc_sr = sr
+
+            if not self._first_audio_logged:
+                log(f"tts: first audio (sentence={item!r})")
+                self._first_audio_logged = True
+
+            assert self._proc.stdin is not None
+            try:
+                self._proc.stdin.write(pcm)
+                self._proc.stdin.flush()
+            except (BrokenPipeError, ValueError):
+                log("tts: paplay pipe broken — respawning on next sentence")
+                self._proc = None
+                self._proc_sr = None

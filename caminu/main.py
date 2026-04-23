@@ -1,13 +1,14 @@
-"""Event loop: wake word -> record -> STT -> LLM -> TTS."""
+"""Event loop: wake word -> record -> STT -> streamed LLM -> streaming TTS."""
 from __future__ import annotations
 import signal
 import sys
 import time
 
-from . import llm, stt, tts
+from . import llm, stt
 from .audio_in import AudioInput
 from .config import HISTORY_MAX_TURNS, HISTORY_TTL_S
 from .log import log
+from .tts import SentenceSpeaker
 
 
 def _trim_history(history: list[dict]) -> list[dict]:
@@ -16,7 +17,6 @@ def _trim_history(history: list[dict]) -> list[dict]:
         return history
     sys_msg = [m for m in history[:1] if m.get("role") == "system"]
     rest = history[len(sys_msg):]
-    # Count user turns from the end; keep last HISTORY_MAX_TURNS
     keep: list[dict] = []
     turns = 0
     for m in reversed(rest):
@@ -55,7 +55,7 @@ def main() -> int:
             audio.wait_for_wake_word()
 
             if time.time() - last_turn > HISTORY_TTL_S:
-                history = []  # fresh conversation
+                history = []
 
             pcm = audio.record_utterance()
             text = stt.transcribe_pcm16(pcm)
@@ -63,10 +63,22 @@ def main() -> int:
                 log("main: empty transcription, back to wake-word")
                 continue
 
-            reply, history = llm.chat_turn(text, history)
+            # Streaming TTS: tokens from Gemma → sentence buffer → Kokoro → paplay.
+            # Kokoro/paplay live in a worker thread so the LLM callback never blocks.
+            speaker = SentenceSpeaker()
+            t0 = time.time()
+
+            def on_text(chunk: str) -> None:
+                speaker.feed(chunk)
+
+            try:
+                reply, history = llm.chat_turn(text, history, on_text=on_text)
+                speaker.flush()
+                log(f"main: reply={reply!r}  llm_elapsed={time.time()-t0:.2f}s")
+            finally:
+                speaker.close()
+
             history = _trim_history(history)
-            if reply:
-                tts.speak(reply)
             last_turn = time.time()
 
         except KeyboardInterrupt:
