@@ -17,7 +17,7 @@ WAKE_COOLDOWN_S = 2.0     # after a trigger, ignore further wakes for this long
 
 # VAD / endpointing -----------------------------------------------------------
 VAD_AGGRESSIVENESS = 2           # 0..3 (webrtcvad)
-VAD_SILENCE_END_MS = 500         # end turn after this much silence (was 800)
+VAD_SILENCE_END_MS = 300         # end turn after this much silence (shorter = snappier)
 VAD_MIN_SPEECH_MS = 300          # must have heard at least this much speech
 MAX_UTTERANCE_S = 15             # hard cap on a single user turn
 
@@ -38,14 +38,14 @@ KOKORO_VOICES_FILENAME = "voices.json"
 KOKORO_VOICE = "af_bella"        # one of 11 voices in voices.json
 KOKORO_SPEED = 1.0
 KOKORO_PREGAIN_DB = 9.0          # Monk Makes is a small speaker; boost output. 9 dB is ~2.8x; stays clean on Kokoro voices. Higher risks clipping on loud syllables.
-KOKORO_USE_CUDA = False          # CPU keeps VRAM free for Gemma's mmproj during vision turns. ~250ms slower first audio but avoids OOM crashes on long vision conversations.
+KOKORO_USE_CUDA = True           # GPU inference ~3x faster than CPU. Safe now that context=4K and old images are stripped from history — the mmproj OOM we hit earlier doesn't reproduce with those fixes.
 
 # Acknowledgement fillers ------------------------------------------------------
 # Small spoken phrases played while C1 is thinking, so the user gets immediate
 # feedback. Only fire when the LLM hasn't emitted a first token within the
 # threshold — snappy turns stay quiet. Pre-synthesized at startup so playback
 # is instant.
-FILLER_AFTER_MS = 300            # wait this long before playing a filler
+FILLER_AFTER_MS = 100            # wait this long before playing a filler — nearly immediate
 FILLER_VOLUME_DB = 6.0           # a bit quieter than main speech; unobtrusive
 FILLER_PHRASES = [
     "mm hmm",

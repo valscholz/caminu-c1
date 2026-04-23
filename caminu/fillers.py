@@ -1,13 +1,9 @@
-"""Acknowledgement 'fillers' — tiny spoken interjections played while C1 is
-thinking, so the user hears something within ~200 ms of finishing their turn
-instead of a silent 1-2 seconds.
-
-We pre-synthesize a pool of short phrases with Kokoro at startup, cache the
-raw PCM, and play a random one through the same PulseAudio sink as regular
-TTS. A filler is only played when the LLM hasn't produced its first content
-token within FILLER_AFTER_MS — fast turns get no filler at all.
+"""Acknowledgement fillers — tiny spoken interjections played while C1 is
+thinking. Cached PCM is synthesized once at startup; playback is as fast as
+possible (no subprocess spawn per call — we keep one aplay alive).
 """
 from __future__ import annotations
+import atexit
 import random
 import subprocess
 import threading
@@ -27,7 +23,13 @@ from .log import log
 
 # Pre-synth cache: phrase -> (pcm_bytes, sample_rate)
 _cache: dict[str, tuple[bytes, int]] = {}
-_lock = threading.Lock()
+_cache_lock = threading.Lock()
+
+# Persistent aplay process (one per session). Reused across calls so we
+# avoid the 100-200 ms subprocess startup penalty per filler.
+_player: Optional[subprocess.Popen] = None
+_player_sr: Optional[int] = None
+_player_lock = threading.Lock()
 
 
 def _apply_gain_db(audio: np.ndarray, gain_db: float) -> np.ndarray:
@@ -37,11 +39,47 @@ def _apply_gain_db(audio: np.ndarray, gain_db: float) -> np.ndarray:
     return np.clip(audio * scale, -1.0, 1.0)
 
 
+def _spawn_player(sr: int) -> subprocess.Popen:
+    return subprocess.Popen(
+        [
+            "aplay",
+            "-q",
+            "-D", ALSA_OUTPUT_DEVICE,
+            "-t", "raw",
+            "-f", "S16_LE",
+            "-r", str(sr),
+            "-c", "1",
+        ],
+        stdin=subprocess.PIPE,
+    )
+
+
+def _get_player(sr: int) -> subprocess.Popen:
+    """Return a live aplay process matching sample rate `sr`.
+    Respawns if the prior process died or rate changed."""
+    global _player, _player_sr
+    with _player_lock:
+        if (
+            _player is None
+            or _player.poll() is not None
+            or _player_sr != sr
+            or _player.stdin is None
+        ):
+            if _player is not None:
+                try:
+                    if _player.stdin:
+                        _player.stdin.close()
+                    _player.terminate()
+                except Exception:
+                    pass
+            _player = _spawn_player(sr)
+            _player_sr = sr
+        return _player
+
+
 def preload() -> None:
-    """Synthesize every filler phrase once and cache the PCM. Call once at
-    agent startup after Kokoro is loaded.
-    """
-    from .tts import _get_tts  # lazy to avoid import cycle at module load
+    """Synthesize every filler phrase once and cache the PCM."""
+    from .tts import _get_tts
     tts = _get_tts()
     for phrase in FILLER_PHRASES:
         if phrase in _cache:
@@ -57,27 +95,47 @@ def preload() -> None:
             log(f"fillers: failed to preload {phrase!r}: {e}")
     log(f"fillers: preloaded {len(_cache)} phrases")
 
+    # Pre-warm the aplay pipe so the first filler isn't paying subprocess startup.
+    if _cache:
+        any_sr = next(iter(_cache.values()))[1]
+        _get_player(any_sr)
+
 
 def play_random() -> None:
-    """Play one cached filler phrase, non-blocking as a fire-and-forget subprocess."""
+    """Play one cached filler phrase. Fast path: writes PCM to an already-
+    running aplay stdin. ~10-30 ms to first sample typical."""
     if not _cache:
         return
-    with _lock:
+    with _cache_lock:
         phrase = random.choice(list(_cache.keys()))
         pcm, sr = _cache[phrase]
     log(f"fillers: {phrase!r}")
     try:
-        subprocess.Popen(
-            [
-                "aplay",
-                "-q",
-                "-D", ALSA_OUTPUT_DEVICE,
-                "-t", "raw",
-                "-f", "S16_LE",
-                "-r", str(sr),
-                "-c", "1",
-            ],
-            stdin=subprocess.PIPE,
-        ).communicate(input=pcm, timeout=3)
-    except Exception as e:
-        log(f"fillers: play failed: {e}")
+        proc = _get_player(sr)
+        assert proc.stdin is not None
+        proc.stdin.write(pcm)
+        proc.stdin.flush()
+    except (BrokenPipeError, ValueError, OSError) as e:
+        log(f"fillers: write failed ({e}); respawning")
+        with _player_lock:
+            global _player
+            _player = None
+
+
+def _shutdown() -> None:
+    global _player
+    with _player_lock:
+        if _player is not None:
+            try:
+                if _player.stdin:
+                    _player.stdin.close()
+                _player.wait(timeout=1)
+            except Exception:
+                try:
+                    _player.kill()
+                except Exception:
+                    pass
+            _player = None
+
+
+atexit.register(_shutdown)
