@@ -34,7 +34,7 @@ FOLLOW_UP_MIN_SPEECH_MS = 500   # was 300; higher to filter stray clicks/breath
 # CT2 from source with CUDA — non-trivial and defers until we actually
 # need that last ~1s of latency reduction. The 10s MAX_AUDIO_S cap in
 # stt.py bounds worst case on CPU to acceptable levels.
-WHISPER_MODEL = "base.en"
+WHISPER_MODEL = "tiny.en"        # tiny.en is ~3x faster than base.en on CPU int8 for ~small accuracy hit. Conversational use barely notices; latency win is huge on longer utterances.
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE = "int8"
 WHISPER_CPU_FALLBACK = False     # already on CPU; no fallback needed

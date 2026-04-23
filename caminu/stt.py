@@ -72,11 +72,10 @@ def _is_hallucination(text: str, audio_duration_s: float) -> bool:
     return False
 
 
-MAX_AUDIO_S = 10.0  # cap on input audio. Longer clips send exponentially
-# worse on CPU int8 Whisper; a 15s noisy clip can take 45s+ to decode
-# while the user is already annoyed. We truncate to the last MAX_AUDIO_S
-# so the user perceives "didn't quite catch everything" instead of a
-# minute-long silence.
+MAX_AUDIO_S = 6.0   # cap on input audio. Whisper CPU is roughly linear up to
+# ~5s, then gets progressively worse. 6s keeps worst-case decode under 2s.
+# Normal sentences are 3-4s so 6s is only clipping genuinely long utterances,
+# where we keep the TAIL (most recent) since that's where the point usually is.
 
 
 def transcribe_pcm16(pcm16: bytes, sample_rate: int = 16000) -> Optional[str]:
