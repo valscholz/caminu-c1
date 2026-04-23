@@ -96,6 +96,12 @@ HISTORY_MAX_TURNS = 8            # cap history length (tokens grow fast on Orin)
 # After C1 finishes speaking, keep the mic open for this long. If the user
 # starts speaking in that window, we continue the conversation without
 # requiring another "Hey Jarvis". If nothing comes, fall back to wake-word.
+#
+# Defaults to OFF because background noise (e.g. a video playing in the
+# room) reliably triggers false follow-ups — the agent hears continuous
+# speech-like audio and "replies" to the video. Re-saying "Hey Jarvis"
+# is a small cost for much more reliable behavior.
+FOLLOW_UP_ENABLED = False
 FOLLOW_UP_WINDOW_S = 8.0
 
 # Paths -----------------------------------------------------------------------

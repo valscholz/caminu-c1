@@ -7,7 +7,13 @@ import time
 
 from . import announcements, camera, fillers, llm, memory, stt, tts
 from .audio_in import AudioInput
-from .config import FILLER_AFTER_MS, FOLLOW_UP_WINDOW_S, HISTORY_MAX_TURNS, HISTORY_TTL_S
+from .config import (
+    FILLER_AFTER_MS,
+    FOLLOW_UP_ENABLED,
+    FOLLOW_UP_WINDOW_S,
+    HISTORY_MAX_TURNS,
+    HISTORY_TTL_S,
+)
 from .log import log, log_mem
 from .tts import SentenceSpeaker
 
