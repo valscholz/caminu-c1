@@ -137,10 +137,11 @@ FOLLOW_UP_DOA_STRICT = False
 # still have RMS as a second gate).
 FOLLOW_UP_REQUIRE_VOICE_ACTIVE = True
 # Minimum RMS level in the detected-speech prebuffer before we even
-# consider it as a real follow-up. 16-bit PCM RMS — 200 is quiet speech,
-# 500+ is normal conversational volume. Rejects ambient fan/breath that
-# webrtcvad occasionally labels as speech.
-FOLLOW_UP_MIN_RMS = 350
+# consider it as a real follow-up. Measured live on this rig — normal
+# conversational speech from ~1m away sits around 100-300 RMS, loud
+# close-talk is 1000+. 80 gates out ambient breath (typ. <40) and keeps
+# the door open for real follow-up attempts.
+FOLLOW_UP_MIN_RMS = 80
 
 # Paths -----------------------------------------------------------------------
 MODELS_DIR = ROOT / "models"
