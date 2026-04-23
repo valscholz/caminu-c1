@@ -92,6 +92,7 @@ class AudioInput:
         self._stream: Optional[sd.InputStream] = None
         self._q: queue.Queue[np.ndarray] = queue.Queue(maxsize=256)
         self._stop_wake = threading.Event()
+        self._muted = False
 
         # webrtcvad supports 10/20/30 ms frames at 8/16/32/48 kHz; we use 20 ms @ 16 kHz
         assert MIC_BLOCK_MS in (10, 20, 30), "webrtcvad requires 10/20/30 ms blocks"
@@ -101,6 +102,11 @@ class AudioInput:
             if status:
                 # Overruns are common during TTS; ignore
                 pass
+            # Muted: drop audio completely — no wake, no follow-up trigger,
+            # no STT feed. Prevents feedback loops where Kokoro's output
+            # leaks into the mic and the agent hears itself.
+            if self._muted:
+                return
             # indata shape: (frames, channels); extract our channel as int16 bytes
             ch = indata[:, MIC_USE_CHANNEL]
             try:
@@ -124,6 +130,14 @@ class AudioInput:
             self._stream.stop()
             self._stream.close()
             self._stream = None
+
+    def mute_input(self, muted: bool) -> None:
+        """Drop all incoming audio while muted. Called during TTS playback
+        so C1 doesn't hear her own voice echoing back. The stream stays
+        open (cheap), we just discard frames at the callback."""
+        self._muted = muted
+        if muted:
+            self._drain_queue()
 
     def _drain_queue(self) -> None:
         try:
