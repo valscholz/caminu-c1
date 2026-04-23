@@ -117,8 +117,10 @@ dl https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gg
 say "Downloading Kokoro TTS"
 dl https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx \
    models/kokoro/kokoro-v1.0.onnx
-dl https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin \
-   models/kokoro/voices-v1.0.bin
+# NOTE: kokoro-onnx 0.3.3 wants the older voices.json (11 voices, JSON format),
+# not the v1.0 .bin bundle (which targets a newer unreleased kokoro-onnx build).
+dl https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.json \
+   models/kokoro/voices.json
 
 say "Downloading openWakeWord helper models (hey_jarvis is prebuilt, mel+embedding fetched on first use)"
 python3 -c "import openwakeword.utils as u; u.download_models(['hey_jarvis'])"

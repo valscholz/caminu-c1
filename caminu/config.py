@@ -33,7 +33,9 @@ LLAMA_MAX_TOOL_HOPS = 4
 LLAMA_MAX_NEW_TOKENS = 200
 
 # TTS (Kokoro) ----------------------------------------------------------------
-KOKORO_VOICE = "af_jessica"
+KOKORO_MODEL_FILENAME = "kokoro-v1.0.onnx"
+KOKORO_VOICES_FILENAME = "voices.json"
+KOKORO_VOICE = "af_bella"        # one of 11 voices in voices.json
 KOKORO_SPEED = 1.0
 KOKORO_PREGAIN_DB = 6.0          # Monk Makes is a small speaker; boost output
 

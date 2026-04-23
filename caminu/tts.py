@@ -11,9 +11,11 @@ import numpy as np
 
 from .config import (
     KOKORO_DIR,
+    KOKORO_MODEL_FILENAME,
     KOKORO_PREGAIN_DB,
     KOKORO_SPEED,
     KOKORO_VOICE,
+    KOKORO_VOICES_FILENAME,
     PULSE_OUTPUT_SINK,
 )
 from .log import log
@@ -27,9 +29,9 @@ def _get_tts():
     if _tts is not None:
         return _tts
     from kokoro_onnx import Kokoro
-    model_path = KOKORO_DIR / "kokoro-v1.0.onnx"
-    voices_path = KOKORO_DIR / "voices-v1.0.bin"
-    log(f"tts: loading Kokoro from {model_path}")
+    model_path = KOKORO_DIR / KOKORO_MODEL_FILENAME
+    voices_path = KOKORO_DIR / KOKORO_VOICES_FILENAME
+    log(f"tts: loading Kokoro from {model_path} + {voices_path}")
     _tts = Kokoro(str(model_path), str(voices_path))
     return _tts
 
