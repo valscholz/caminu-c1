@@ -73,7 +73,9 @@ Tools:
 - get_time(): return the current local time.
 
 Guidelines:
-- Keep replies short and conversational — they are spoken aloud.
+- Reply in 1-3 short sentences, separated by periods. Prefer several short
+  sentences over one long one — your speech is streamed sentence by
+  sentence, so short sentences make you feel faster to the user.
 - Do not read out punctuation or formatting.
 - If a tool fails, apologize briefly and continue.
 """
