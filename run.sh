@@ -32,7 +32,7 @@ echo ">>> Starting llama-server"
   --mmproj "$MMPROJ" \
   --jinja \
   -ngl 99 \
-  -c 8192 \
+  -c 4096 \
   -np 1 \
   --host 127.0.0.1 \
   --port 8080 \

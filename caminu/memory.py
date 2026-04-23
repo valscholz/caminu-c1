@@ -188,7 +188,12 @@ def recall(query: str, k: int = MEMORY_RECALL_K) -> list[dict]:
 
 
 def preload() -> None:
-    """Warm everything at agent startup so the first recall() isn't cold."""
+    """Ensure memory dirs exist. Does NOT load the embedder — that's lazy.
+
+    On an 8 GB Jetson, sentence-transformers + torch pulls in ~1.5 GB of
+    shared libraries. If we preload it, the kernel starts swapping under
+    memory pressure when Gemma does a big context ingest, causing 10+ s
+    STT stalls. recall() loads the embedder on demand; subsequent
+    recall()s reuse the cached instance.
+    """
     ensure_dirs()
-    _get_embedder()
-    _rebuild_index_if_stale()
