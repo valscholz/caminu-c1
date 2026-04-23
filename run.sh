@@ -27,6 +27,11 @@ pactl set-sink-volume \
 
 # Start llama-server in the background
 echo ">>> Starting llama-server"
+# Rotate logs so we don't lose prior sessions on restart.
+for name in agent llama-server; do
+  [ -s "logs/${name}.log" ] && mv "logs/${name}.log" "logs/${name}.$(date +%Y%m%d-%H%M%S).log"
+done
+
 ./llama.cpp/build/bin/llama-server \
   -m "$GGUF" \
   --mmproj "$MMPROJ" \

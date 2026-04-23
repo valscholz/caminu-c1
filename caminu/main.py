@@ -112,9 +112,12 @@ def main() -> int:
             if time.time() - last_turn > HISTORY_TTL_S:
                 history = []
 
+            t_stop_speaking = time.time()
             pcm = audio.record_utterance(prebuffer=follow_up_prebuffer)
+            t_stt_start = time.time()
             follow_up_prebuffer = b""
             text = stt.transcribe_pcm16(pcm)
+            t_stt_done = time.time()
             if not text:
                 log("main: empty transcription, back to wake-word")
                 in_follow_up = False
@@ -122,9 +125,8 @@ def main() -> int:
 
             speaker = SentenceSpeaker()
             first_audio_event = threading.Event()
+            t_first_token: list[float] = []  # capture mutable from closure
 
-            # Filler timer: play an acknowledgement phrase if no content arrives
-            # within FILLER_AFTER_MS of STT completion.
             filler_timer = threading.Timer(
                 FILLER_AFTER_MS / 1000.0,
                 lambda: (not first_audio_event.is_set()) and fillers.play_random(),
@@ -136,13 +138,22 @@ def main() -> int:
                 if not first_audio_event.is_set():
                     first_audio_event.set()
                     filler_timer.cancel()
+                    t_first_token.append(time.time())
                 speaker.feed(chunk)
 
-            t0 = time.time()
+            t_llm_start = time.time()
             try:
                 reply, history = llm.chat_turn(text, history, on_text=on_text)
                 speaker.flush()
-                log(f"main: reply={reply!r}  llm_elapsed={time.time()-t0:.2f}s")
+                t_llm_done = time.time()
+                first_tok = t_first_token[0] if t_first_token else t_llm_done
+                log(
+                    f"main: reply={reply!r}  "
+                    f"stt={t_stt_done-t_stt_start:.2f}s  "
+                    f"llm_first_tok={first_tok-t_llm_start:.2f}s  "
+                    f"llm_total={t_llm_done-t_llm_start:.2f}s  "
+                    f"end_of_speech_to_first_tok={first_tok-t_stop_speaking:.2f}s"
+                )
             finally:
                 filler_timer.cancel()
                 speaker.close()
