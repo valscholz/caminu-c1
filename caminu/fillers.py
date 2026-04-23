@@ -16,11 +16,11 @@ from typing import Optional
 import numpy as np
 
 from .config import (
+    ALSA_OUTPUT_DEVICE,
     FILLER_PHRASES,
     FILLER_VOLUME_DB,
     KOKORO_SPEED,
     KOKORO_VOICE,
-    PULSE_OUTPUT_SINK,
 )
 from .log import log
 
@@ -67,15 +67,15 @@ def play_random() -> None:
         pcm, sr = _cache[phrase]
     log(f"fillers: {phrase!r}")
     try:
-        # fire-and-forget: we don't wait for it to finish
         subprocess.Popen(
             [
-                "paplay",
-                f"--device={PULSE_OUTPUT_SINK}",
-                "--raw",
-                "--format=s16le",
-                f"--rate={sr}",
-                "--channels=1",
+                "aplay",
+                "-q",
+                "-D", ALSA_OUTPUT_DEVICE,
+                "-t", "raw",
+                "-f", "S16_LE",
+                "-r", str(sr),
+                "-c", "1",
             ],
             stdin=subprocess.PIPE,
         ).communicate(input=pcm, timeout=3)

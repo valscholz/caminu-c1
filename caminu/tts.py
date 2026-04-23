@@ -20,6 +20,7 @@ from typing import Optional
 import numpy as np
 
 from .config import (
+    ALSA_OUTPUT_DEVICE,
     KOKORO_DIR,
     KOKORO_MODEL_FILENAME,
     KOKORO_PREGAIN_DB,
@@ -27,7 +28,6 @@ from .config import (
     KOKORO_USE_CUDA,
     KOKORO_VOICE,
     KOKORO_VOICES_FILENAME,
-    PULSE_OUTPUT_SINK,
 )
 from .log import log
 
@@ -89,18 +89,27 @@ def _synthesize(text: str) -> tuple[bytes, int]:
     return (samples * 32767.0).astype(np.int16).tobytes(), sr
 
 
-def _paplay_process(sample_rate: int) -> subprocess.Popen:
+def _aplay_process(sample_rate: int) -> subprocess.Popen:
+    """aplay reads raw s16le mono from stdin and writes to the ReSpeaker ALSA
+    device directly. We bypass PulseAudio for output because PA loses the
+    card from its sink list once sounddevice has the ALSA device open
+    exclusively for input."""
     return subprocess.Popen(
         [
-            "paplay",
-            f"--device={PULSE_OUTPUT_SINK}",
-            "--raw",
-            "--format=s16le",
-            f"--rate={sample_rate}",
-            "--channels=1",
+            "aplay",
+            "-q",                   # quiet: no startup banner
+            "-D", ALSA_OUTPUT_DEVICE,
+            "-t", "raw",
+            "-f", "S16_LE",
+            "-r", str(sample_rate),
+            "-c", "1",
         ],
         stdin=subprocess.PIPE,
     )
+
+
+# Backwards compat alias — older code called this _paplay_process.
+_paplay_process = _aplay_process
 
 
 # ---------------- blocking one-shot (retained for convenience) -----------------

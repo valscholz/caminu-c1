@@ -57,7 +57,14 @@ FILLER_PHRASES = [
     "ah yes",
 ]
 
-# Audio output sink -----------------------------------------------------------
+# Audio output ---------------------------------------------------------------
+# We open the ReSpeaker's ALSA device directly for mic capture (PulseAudio
+# locks us out otherwise). Once we own hw:0,0 exclusively for input, PA
+# tends to drop the ReSpeaker card from its sink list and our paplay
+# --device=... then fails with 'Stream error: No such entity'. So we bypass
+# PA for playback too and go straight to ALSA via aplay on the same card.
+ALSA_OUTPUT_DEVICE = "plughw:CARD=ArrayUAC10,DEV=0"
+# Kept for backwards compat / reference — no longer used in the TTS path.
 PULSE_OUTPUT_SINK = (
     "alsa_output.usb-SEEED_ReSpeaker_4_Mic_Array__UAC1.0_-00.analog-stereo"
 )
