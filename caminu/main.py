@@ -82,9 +82,10 @@ def main() -> int:
     log("caminu-c1 starting")
     log_mem("boot")
 
-    # Instant chime — plays a cached WAV while the rest of the stack warms up.
-    # No LLM / Kokoro dependency, fires in <1s from process start.
-    announcements.play_instant_boot_chime()
+    # Intentionally no instant-boot chime. It confused things by signalling
+    # "I'm back" before the mic was actually open — user tried to talk and
+    # got ignored. The single spoken greeting below (post-preload, post-
+    # mic-start) is the canonical "I'm ready" signal.
 
     if not llm.wait_for_server(timeout_s=60):
         log("FATAL: llama-server not reachable. Is run.sh starting it correctly?")
@@ -112,16 +113,16 @@ def main() -> int:
     if avail_mb and avail_mb < 800:
         log(f"main: WARN low memory at ready ({avail_mb:.0f} MB avail)")
 
-    # Once everything above is ready, speak a fresh time-of-day greeting.
-    # This plays after the instant chime and replaces the generic cached
-    # line with a contextual one.
+    audio = AudioInput()
+    audio.start()
+
+    # Speak the greeting AFTER the mic is live, so the moment the user
+    # hears "Caminu C1 at your service" is the moment the agent is
+    # actually listening. One signal, unambiguous.
     try:
         announcements.speak_startup_greeting()
     except Exception as e:
         log(f"main: startup greeting failed (non-fatal): {e}")
-
-    audio = AudioInput()
-    audio.start()
 
     def _shutdown(_signum, _frame):
         log("caminu-c1 shutdown")
