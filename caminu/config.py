@@ -38,7 +38,7 @@ KOKORO_VOICES_FILENAME = "voices.json"
 KOKORO_VOICE = "af_bella"        # one of 11 voices in voices.json
 KOKORO_SPEED = 1.0
 KOKORO_PREGAIN_DB = 9.0          # Monk Makes is a small speaker; boost output. 9 dB is ~2.8x; stays clean on Kokoro voices. Higher risks clipping on loud syllables.
-KOKORO_USE_CUDA = True           # try ONNX CUDA provider; silently falls back to CPU if unavailable
+KOKORO_USE_CUDA = False          # CPU keeps VRAM free for Gemma's mmproj during vision turns. ~250ms slower first audio but avoids OOM crashes on long vision conversations.
 
 # Acknowledgement fillers ------------------------------------------------------
 # Small spoken phrases played while C1 is thinking, so the user gets immediate
