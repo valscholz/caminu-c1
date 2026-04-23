@@ -130,13 +130,19 @@ def speak(text: str) -> None:
 
 # ---------------- streaming speaker --------------------------------------------
 
-# Split on sentence-final punctuation followed by a boundary (whitespace or EOL).
-# We keep the punctuation with the preceding sentence by using a lookbehind-ish trick.
-_SENT_END = re.compile(r"([.!?][\"')\]]*\s+|\n+)")
+# Split on any prosodic break: full sentence terminators, commas, semicolons,
+# colons, dashes. Shorter chunks mean Kokoro starts synthesizing earlier, so
+# first audio lands sooner. Cost is slightly choppier prosody within a
+# sentence — acceptable trade for a voice agent where time-to-first-audio
+# matters more than perfect narration.
+_SENT_END = re.compile(r"([.!?;:][\"')\]]*\s+|,\s+|\s+—\s+|\n+)")
 
-# Avoid tiny "sentences" like single-letter abbreviations — wait for at least this
-# many non-whitespace characters before we consider emitting a sentence.
-_MIN_SENTENCE_CHARS = 6
+# Avoid tiny "chunks" like single-letter abbreviations or "Oh, " alone. We
+# require at least this many non-whitespace characters before emitting. Note:
+# the FIRST chunk of a reply uses a shorter threshold so the user hears
+# something as soon as possible.
+_MIN_SENTENCE_CHARS = 10
+_MIN_FIRST_CHUNK_CHARS = 4
 
 
 class SentenceSpeaker:
@@ -158,7 +164,7 @@ class SentenceSpeaker:
     # ---- producer side (called from the LLM token callback) ----
 
     def feed(self, chunk: str) -> None:
-        """Append streamed tokens; emit any completed sentences."""
+        """Append streamed tokens; emit any completed chunks."""
         if not self._started:
             self._started = True
             self._worker.start()
@@ -169,10 +175,14 @@ class SentenceSpeaker:
             if not m:
                 return
             end = m.end()
-            sentence = self._buffer[:end].strip()
+            chunk_out = self._buffer[:end].strip()
             self._buffer = self._buffer[end:]
-            if len(sentence) >= _MIN_SENTENCE_CHARS:
-                self._queue.put(sentence)
+            # First chunk of a reply: low threshold so user hears something
+            # ASAP. Subsequent chunks require a bit more substance so we
+            # don't keep clipping into tiny fragments.
+            min_len = _MIN_FIRST_CHUNK_CHARS if not self._first_audio_logged else _MIN_SENTENCE_CHARS
+            if len(chunk_out) >= min_len:
+                self._queue.put(chunk_out)
 
     def flush(self) -> None:
         """Emit any trailing partial text as a final 'sentence'."""
