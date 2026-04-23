@@ -1,7 +1,7 @@
 """Tool registry for Gemma 4 tool calling."""
 from datetime import datetime
 
-from . import camera
+from . import camera, memory
 from .log import log
 
 
@@ -27,6 +27,50 @@ TOOL_SCHEMAS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "remember",
+            "description": (
+                "Save a short, important fact about the user or this home/room "
+                "that you'll want to recall in future conversations. Use this "
+                "for things like the user's name, preferences, ongoing projects, "
+                "or stable traits. Do NOT use it for one-off chit-chat."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "fact": {
+                        "type": "string",
+                        "description": "The fact to remember, as a single short sentence.",
+                    },
+                },
+                "required": ["fact"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recall",
+            "description": (
+                "Search your previous conversations with this user for something "
+                "relevant to a query. Use this when the user references past "
+                "conversations ('remember when', 'what did I say about X', 'you "
+                "told me...'). Returns up to 3 past turns."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "What to search for in past conversations.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -45,7 +89,26 @@ def get_time() -> dict:
     return {"text": now}
 
 
+def remember(fact: str) -> dict:
+    return {"text": memory.remember_fact(fact)}
+
+
+def recall(query: str) -> dict:
+    hits = memory.recall(query)
+    if not hits:
+        return {"text": "I couldn't find anything in our past conversations about that."}
+    lines = []
+    for h in hits:
+        ts = h.get("ts", "")
+        u = h.get("user", "").strip()
+        a = h.get("assistant", "").strip()
+        lines.append(f"- [{ts}] user: {u}  |  you: {a}")
+    return {"text": "Past turns:\n" + "\n".join(lines)}
+
+
 TOOLS = {
     "take_picture": take_picture,
     "get_time": get_time,
+    "remember": remember,
+    "recall": recall,
 }

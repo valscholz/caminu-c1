@@ -12,9 +12,15 @@ from typing import Any, Callable, Iterator, Optional
 
 import requests
 
+from . import memory
 from .config import LLAMA_MAX_NEW_TOKENS, LLAMA_MAX_TOOL_HOPS, LLAMA_URL, SYSTEM_PROMPT
 from .log import log
 from .tools import TOOL_SCHEMAS, TOOLS
+
+
+def _build_system_prompt() -> str:
+    """System prompt + any persisted facts injected fresh each turn."""
+    return SYSTEM_PROMPT + memory.facts_for_prompt()
 
 
 OnTextFn = Callable[[str], None]
@@ -158,10 +164,16 @@ def chat_turn(
 
     Returns (full_reply_text, new_history).
     """
+    sys_content = _build_system_prompt()
     if not history:
-        messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages: list[dict] = [{"role": "system", "content": sys_content}]
     else:
+        # refresh the system message each turn so freshly-remembered facts land
         messages = list(history)
+        if messages and messages[0].get("role") == "system":
+            messages[0] = {"role": "system", "content": sys_content}
+        else:
+            messages.insert(0, {"role": "system", "content": sys_content})
     messages.append({"role": "user", "content": user_text})
 
     for hop in range(LLAMA_MAX_TOOL_HOPS):

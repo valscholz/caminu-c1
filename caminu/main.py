@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 
-from . import camera, fillers, llm, stt, tts
+from . import camera, fillers, llm, memory, stt, tts
 from .audio_in import AudioInput
 from .config import FILLER_AFTER_MS, HISTORY_MAX_TURNS, HISTORY_TTL_S
 from .log import log
@@ -76,10 +76,11 @@ def main() -> int:
     log("llm: llama-server is up")
 
     # Preload heavy models so the first user turn doesn't pay cold-load latency.
-    log("main: preloading STT, TTS, fillers, and camera")
+    log("main: preloading STT, TTS, fillers, memory, and camera")
     stt._get_model()          # warm faster-whisper
     tts._get_tts()            # warm Kokoro
     fillers.preload()         # pre-synth filler PCM
+    memory.preload()          # warm embedder + index conversation log
     camera.start()            # start OAK-D background thread
     log("main: ready")
 
@@ -139,6 +140,7 @@ def main() -> int:
 
             history = _strip_old_images(history)
             history = _trim_history(history)
+            memory.log_turn(text, reply)
             last_turn = time.time()
 
         except KeyboardInterrupt:

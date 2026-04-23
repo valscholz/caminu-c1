@@ -22,3 +22,10 @@ logs/
 scripts/deploy.sh.local
 .env
 .claude/
+
+# Persistent memory (user-specific, don't ship in the repo)
+memory/facts.md
+memory/conversations.jsonl
+memory/*.md
+memory/*.jsonl
+!memory/.gitkeep
