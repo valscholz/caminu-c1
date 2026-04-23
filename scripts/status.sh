@@ -9,6 +9,16 @@ pgrep -af "caminu.main|llama-server" | grep -v grep || echo "(not running)"
 
 say "== memory =="
 free -h | head -2
+echo ""
+# Extract the memory snapshots the agent logged at startup
+LATEST=$(ls -t ~/caminu-c1/logs/agent*.log 2>/dev/null | head -1 || true)
+if [ -n "$LATEST" ]; then
+  echo "startup footprint (this boot):"
+  grep "\[mem:" "$LATEST" | tail -10
+else
+  # Try service journal buffer fallback
+  systemctl --user status caminu --no-pager 2>&1 | grep "\[mem:" | tail -10
+fi
 
 say "== GPU / VRAM =="
 if command -v tegrastats >/dev/null; then

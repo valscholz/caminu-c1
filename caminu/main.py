@@ -8,7 +8,7 @@ import time
 from . import announcements, camera, fillers, llm, memory, stt, tts
 from .audio_in import AudioInput
 from .config import FILLER_AFTER_MS, FOLLOW_UP_WINDOW_S, HISTORY_MAX_TURNS, HISTORY_TTL_S
-from .log import log
+from .log import log, log_mem
 from .tts import SentenceSpeaker
 
 
@@ -69,6 +69,7 @@ def _trim_history(history: list[dict]) -> list[dict]:
 
 def main() -> int:
     log("caminu-c1 starting")
+    log_mem("boot")
 
     # Instant chime — plays a cached WAV while the rest of the stack warms up.
     # No LLM / Kokoro dependency, fires in <1s from process start.
@@ -78,15 +79,18 @@ def main() -> int:
         log("FATAL: llama-server not reachable. Is run.sh starting it correctly?")
         return 1
     log("llm: llama-server is up")
+    log_mem("llama_ready")
 
     # Preload heavy models so the first user turn doesn't pay cold-load latency.
+    # Each preload step logs a memory snapshot so we can see what costs what.
     log("main: preloading STT, TTS, fillers, memory, and camera")
-    stt._get_model()          # warm faster-whisper
-    tts._get_tts()            # warm Kokoro
-    fillers.preload()         # pre-synth filler PCM
-    memory.preload()          # warm embedder + index conversation log
-    camera.start()            # start OAK-D background thread
+    stt._get_model();       log_mem("whisper_loaded")
+    tts._get_tts();         log_mem("kokoro_loaded")
+    fillers.preload();      log_mem("fillers_loaded")
+    memory.preload();       log_mem("memory_preloaded")
+    camera.start()          # camera warms in background; snapshot is taken async
     log("main: ready")
+    log_mem("ready")
 
     # Once everything above is ready, speak a fresh time-of-day greeting.
     # This plays after the instant chime and replaces the generic cached
