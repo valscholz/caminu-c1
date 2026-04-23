@@ -14,7 +14,7 @@ from typing import Optional
 
 import numpy as np
 
-from .config import WHISPER_COMPUTE, WHISPER_DEVICE, WHISPER_MODEL
+from .config import STT_BACKEND, WHISPER_COMPUTE, WHISPER_DEVICE, WHISPER_MODEL
 from .log import log
 
 # Disable TensorRT entirely: Parakeet's preprocessor has dynamic shapes TRT
@@ -81,13 +81,15 @@ def _get_model():
     global _model, _backend
     if _model is not None:
         return _model
-    try:
-        _model = _load_parakeet()
-        _backend = "parakeet"
-    except Exception as e:
-        log(f"stt: Parakeet load failed ({type(e).__name__}: {str(e)[:120]}); falling back to Whisper")
-        _model = _load_whisper()
-        _backend = "whisper"
+    if STT_BACKEND == "parakeet":
+        try:
+            _model = _load_parakeet()
+            _backend = "parakeet"
+            return _model
+        except Exception as e:
+            log(f"stt: Parakeet load failed ({type(e).__name__}: {str(e)[:120]}); falling back to Whisper")
+    _model = _load_whisper()
+    _backend = "whisper"
     return _model
 
 

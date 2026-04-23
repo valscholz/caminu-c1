@@ -39,6 +39,12 @@ WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE = "int8"
 WHISPER_CPU_FALLBACK = False     # already on CPU; no fallback needed
 
+# STT backend: "parakeet" for GPU Parakeet TDT, "whisper" for CPU fallback.
+# Parakeet is ~6x faster per turn but eats ~1.5 GB extra RAM; on 8 GB Orin
+# Nano with Gemma + Kokoro GPU + camera + fastembed + openWakeWord all
+# resident, it OOM-killed the service. Keeping whisper as the default.
+STT_BACKEND = "whisper"
+
 # LLM (llama-server) ----------------------------------------------------------
 LLAMA_URL = "http://127.0.0.1:8080"
 LLAMA_MODEL_NAME = "gemma-4-e2b"
