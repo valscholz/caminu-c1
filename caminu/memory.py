@@ -73,10 +73,18 @@ def facts_for_prompt() -> str:
     facts = load_facts()
     if not facts:
         return ""
-    # keep the most recent MEMORY_MAX_FACTS
     facts = facts[-MEMORY_MAX_FACTS:]
     body = "\n".join(f"- {f}" for f in facts)
-    return f"\n\n# What you remember\n{body}\n"
+    # Framed as authoritative so Gemma doesn't answer "I don't know" or
+    # "I have no record" when the fact is right in front of her. Small
+    # models (E2B) often ignore bullet-listed context unless it's
+    # explicitly flagged as something to use.
+    return (
+        "\n\n# Things you already know about this user\n"
+        "These facts are from past conversations. Treat them as known. "
+        "Never say 'I don't have that information' about anything listed here.\n"
+        f"{body}\n"
+    )
 
 
 def remember_fact(fact: str) -> str:
