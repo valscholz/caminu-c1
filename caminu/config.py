@@ -20,7 +20,7 @@ WAKE_COOLDOWN_S = 2.0     # after a trigger, ignore further wakes for this long
 # starts a turn whenever voice is detected above FOLLOW_UP_MIN_RMS from the
 # same speaker region. vad mode frees ~150 MB (no openWakeWord ONNX) at
 # the cost of no explicit invocation phrase.
-WAKE_MODE = "vad"
+WAKE_MODE = "wake_word"
 
 # VAD / endpointing -----------------------------------------------------------
 VAD_AGGRESSIVENESS = 2           # 0..3 (webrtcvad)
