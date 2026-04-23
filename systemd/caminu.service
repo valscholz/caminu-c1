@@ -11,11 +11,11 @@ WorkingDirectory=%h/caminu-c1
 # Make sure CUDA is on PATH for non-interactive shells.
 Environment=PATH=/usr/local/cuda-12.6/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64
-# Wait 20s after boot so kernel caches, Docker, journald, etc finish their
-# startup burst before we claim ~5 GB. Gives us ~300-500 MB more headroom
-# than starting immediately. On manual `systemctl restart` this pause also
-# applies — acceptable, restarts are rare.
-ExecStartPre=/bin/sleep 20
+# Wait for the boot-time memory churn to subside before we claim ~5 GB.
+# wait_for_settle.py polls /proc/meminfo and exits as soon as MemAvailable
+# has been stable for 10s — so fast boots skip the wait, slow boots get
+# patience. Hard ceiling of 90s.
+ExecStartPre=/usr/bin/python3 %h/caminu-c1/scripts/wait_for_settle.py
 # run.sh activates the venv and handles the rest.
 ExecStart=/bin/bash -lc './run.sh'
 # If the agent crashes, come back up after a short pause.
