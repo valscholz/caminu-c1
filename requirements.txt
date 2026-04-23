@@ -1,0 +1,10 @@
+depthai>=3.5,<4
+faster-whisper>=1.0
+kokoro-onnx>=0.3
+openwakeword>=0.6
+webrtcvad>=2.0
+sounddevice>=0.4
+numpy<2
+requests>=2.31
+Pillow>=10
+opencv-python-headless>=4.8
