@@ -28,11 +28,16 @@ MAX_UTTERANCE_S = 15             # hard cap on a single user turn
 FOLLOW_UP_MIN_SPEECH_MS = 500   # was 300; higher to filter stray clicks/breath
 
 # STT -------------------------------------------------------------------------
+# Whisper base.en stays on CPU int8 because the pip ctranslate2 wheel on
+# aarch64 JP6 is built without CUDA ("This CTranslate2 package was not
+# compiled with CUDA support"). Getting GPU Whisper would mean building
+# CT2 from source with CUDA — non-trivial and defers until we actually
+# need that last ~1s of latency reduction. The 10s MAX_AUDIO_S cap in
+# stt.py bounds worst case on CPU to acceptable levels.
 WHISPER_MODEL = "base.en"
-WHISPER_DEVICE = "cuda"          # GPU fp16 is ~10x faster than CPU int8
-WHISPER_COMPUTE = "float16"
-# Auto-fallback to CPU int8 if CUDA init fails (e.g. cuBLAS/cuDNN mismatch).
-WHISPER_CPU_FALLBACK = True
+WHISPER_DEVICE = "cpu"
+WHISPER_COMPUTE = "int8"
+WHISPER_CPU_FALLBACK = False     # already on CPU; no fallback needed
 
 # LLM (llama-server) ----------------------------------------------------------
 LLAMA_URL = "http://127.0.0.1:8080"
