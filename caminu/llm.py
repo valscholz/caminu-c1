@@ -17,6 +17,10 @@ def _call(messages: list[dict]) -> dict:
         "max_tokens": LLAMA_MAX_NEW_TOKENS,
         "stream": False,
         "temperature": 0.7,
+        # Gemma 4 defaults to a verbose chain-of-thought that blows past
+        # max_tokens before emitting user-facing content. For a voice
+        # agent we want direct replies.
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     r = requests.post(f"{LLAMA_URL}/v1/chat/completions", json=payload, timeout=120)
     r.raise_for_status()
