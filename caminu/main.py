@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 
-from . import camera, fillers, llm, memory, stt, tts
+from . import announcements, camera, fillers, llm, memory, stt, tts
 from .audio_in import AudioInput
 from .config import FILLER_AFTER_MS, FOLLOW_UP_WINDOW_S, HISTORY_MAX_TURNS, HISTORY_TTL_S
 from .log import log
@@ -70,6 +70,10 @@ def _trim_history(history: list[dict]) -> list[dict]:
 def main() -> int:
     log("caminu-c1 starting")
 
+    # Instant chime — plays a cached WAV while the rest of the stack warms up.
+    # No LLM / Kokoro dependency, fires in <1s from process start.
+    announcements.play_instant_boot_chime()
+
     if not llm.wait_for_server(timeout_s=60):
         log("FATAL: llama-server not reachable. Is run.sh starting it correctly?")
         return 1
@@ -84,11 +88,23 @@ def main() -> int:
     camera.start()            # start OAK-D background thread
     log("main: ready")
 
+    # Once everything above is ready, speak a fresh time-of-day greeting.
+    # This plays after the instant chime and replaces the generic cached
+    # line with a contextual one.
+    try:
+        announcements.speak_startup_greeting()
+    except Exception as e:
+        log(f"main: startup greeting failed (non-fatal): {e}")
+
     audio = AudioInput()
     audio.start()
 
     def _shutdown(_signum, _frame):
         log("caminu-c1 shutdown")
+        try:
+            announcements.speak_farewell()
+        except Exception as e:
+            log(f"main: farewell failed (non-fatal): {e}")
         audio.stop()
         camera.stop()
         sys.exit(0)

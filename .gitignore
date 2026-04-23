@@ -18,6 +18,9 @@ logs/
 .vscode/
 .idea/
 
+# Auto-generated boot announcement WAVs (rendered by install.sh)
+assets/boot_*.wav
+
 # Local ops
 scripts/deploy.sh.local
 .env

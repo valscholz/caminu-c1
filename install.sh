@@ -135,6 +135,9 @@ python3 -c "import openwakeword.utils as u; u.download_models(['hey_jarvis'])"
 say "Warming faster-whisper base.en (one-time)"
 python3 -c "from faster_whisper import WhisperModel; m = WhisperModel('base.en', device='cpu', compute_type='int8'); print('ok')"
 
+say "Rendering instant-boot announcement WAVs"
+python3 scripts/regenerate_boot_wavs.py
+
 # 11. Verification -------------------------------------------------------------
 say "Verification"
 arecord -l 2>/dev/null | grep -i respeaker && echo "  [ok] ReSpeaker detected" || echo "  [WARN] ReSpeaker NOT detected"
