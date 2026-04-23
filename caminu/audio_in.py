@@ -14,6 +14,7 @@ from typing import Optional
 import numpy as np
 
 from .config import (
+    FOLLOW_UP_MIN_SPEECH_MS,
     MAX_UTTERANCE_S,
     MIC_BLOCK_MS,
     MIC_CHANNELS,
@@ -205,11 +206,14 @@ class AudioInput:
 
         Used by follow-up mode: after C1 finishes speaking, we keep the mic
         open briefly — if the user starts talking, we treat it as the next
-        turn without a new wake-word.
+        turn without a new wake-word. We require sustained continuous speech
+        (FOLLOW_UP_MIN_SPEECH_MS) to avoid breathing/clicks/ambient triggering
+        false follow-ups.
         """
         self._drain_queue()
         deadline = time.time() + window_s
         speech_ms = 0
+        chunks: list[bytes] = []
         while time.time() < deadline:
             block = self._next_block(timeout=min(1.0, max(0.1, deadline - time.time())))
             if block is None:
@@ -217,11 +221,14 @@ class AudioInput:
             pcm = block.astype(np.int16).tobytes()
             if self._vad.is_speech(pcm, MIC_SAMPLE_RATE):
                 speech_ms += MIC_BLOCK_MS
-                if speech_ms >= VAD_MIN_SPEECH_MS:
+                chunks.append(pcm)
+                if speech_ms >= FOLLOW_UP_MIN_SPEECH_MS:
                     log(f"audio_in: follow-up speech detected after {speech_ms} ms")
-                    return pcm
+                    # Return all accumulated speech so the first word isn't lost.
+                    return b"".join(chunks)
             else:
-                # a non-speech block resets the counter so random clicks don't accumulate
+                # Non-speech block resets so random clicks don't accumulate.
                 speech_ms = 0
+                chunks = []
         log(f"audio_in: follow-up window expired ({window_s:.1f}s)")
         return None

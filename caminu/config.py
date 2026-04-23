@@ -17,9 +17,15 @@ WAKE_COOLDOWN_S = 2.0     # after a trigger, ignore further wakes for this long
 
 # VAD / endpointing -----------------------------------------------------------
 VAD_AGGRESSIVENESS = 2           # 0..3 (webrtcvad)
-VAD_SILENCE_END_MS = 300         # end turn after this much silence (shorter = snappier)
+VAD_SILENCE_END_MS = 500         # end turn after this much silence. 300ms cut users off mid-sentence.
 VAD_MIN_SPEECH_MS = 300          # must have heard at least this much speech
 MAX_UTTERANCE_S = 15             # hard cap on a single user turn
+
+# Follow-up mode detector: stricter than normal VAD so ambient noise / breath
+# doesn't re-open the mic. Only the window-length is set in FOLLOW_UP_WINDOW_S
+# above; this controls how much continuous speech has to land before we decide
+# the user has started a new turn.
+FOLLOW_UP_MIN_SPEECH_MS = 500   # was 300; higher to filter stray clicks/breath
 
 # STT -------------------------------------------------------------------------
 WHISPER_MODEL = "base.en"

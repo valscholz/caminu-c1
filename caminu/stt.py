@@ -25,14 +25,51 @@ def _get_model():
     return _model
 
 
+# Whisper base.en's well-known hallucinations on short / silent / noisy audio.
+# These come from its training data (YouTube transcripts). If the audio is
+# short and STT returns one of these, the user almost certainly didn't say it.
+_WHISPER_HALLUCINATIONS = {
+    "thanks for watching",
+    "thanks for watching!",
+    "thank you for watching",
+    "thank you for watching.",
+    "please subscribe",
+    "please like and subscribe",
+    "and we'll see you in the next one",
+    "and we'll see you in the next one.",
+    "see you in the next one",
+    "subscribe to my channel",
+    "thanks for watching bye",
+    "you",
+    "bye",
+    ".",
+}
+
+
+def _is_hallucination(text: str, audio_duration_s: float) -> bool:
+    """Heuristic: reject common Whisper hallucinations on short / nothing clips."""
+    normed = text.lower().strip(" .!?")
+    if not normed:
+        return True
+    # If it matches a known hallucination phrase and the clip was short-ish
+    if normed in _WHISPER_HALLUCINATIONS and audio_duration_s < 3.0:
+        return True
+    # Very short single-word "you" / "bye" on a <1s clip is almost always noise
+    if audio_duration_s < 1.0 and len(normed.split()) <= 1:
+        return True
+    return False
+
+
 def transcribe_pcm16(pcm16: bytes, sample_rate: int = 16000) -> Optional[str]:
-    """Transcribe raw s16le PCM mono audio. Returns text or None if empty."""
+    """Transcribe raw s16le PCM mono audio. Returns text or None if empty
+    or if the result looks like a Whisper hallucination on silence."""
     if not pcm16:
         return None
     audio_i16 = np.frombuffer(pcm16, dtype=np.int16)
     if audio_i16.size == 0:
         return None
     audio = audio_i16.astype(np.float32) / 32768.0
+    duration_s = len(audio) / sample_rate
 
     model = _get_model()
     segments, _info = model.transcribe(
@@ -42,6 +79,11 @@ def transcribe_pcm16(pcm16: bytes, sample_rate: int = 16000) -> Optional[str]:
         beam_size=1,       # speed over accuracy; base.en is small
     )
     text = " ".join(s.text.strip() for s in segments).strip()
+
+    if _is_hallucination(text, duration_s):
+        log(f"stt: dropping hallucination {text!r} (dur={duration_s:.2f}s)")
+        return None
+
     log(f"stt: {text!r}")
     return text or None
 
