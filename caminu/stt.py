@@ -72,10 +72,9 @@ def _is_hallucination(text: str, audio_duration_s: float) -> bool:
     return False
 
 
-MAX_AUDIO_S = 6.0   # cap on input audio. Whisper CPU is roughly linear up to
-# ~5s, then gets progressively worse. 6s keeps worst-case decode under 2s.
-# Normal sentences are 3-4s so 6s is only clipping genuinely long utterances,
-# where we keep the TAIL (most recent) since that's where the point usually is.
+MAX_AUDIO_S = 20.0  # we can accept long audio now that VAD-chunking splits
+# it at natural silences before decoding. Cap is defensive against
+# pathological multi-minute captures only.
 
 
 def transcribe_pcm16(pcm16: bytes, sample_rate: int = 16000) -> Optional[str]:
@@ -97,10 +96,19 @@ def transcribe_pcm16(pcm16: bytes, sample_rate: int = 16000) -> Optional[str]:
     duration_s = len(audio) / sample_rate
 
     model = _get_model()
+    # VAD-based internal chunking: faster-whisper uses Silero VAD to split
+    # long audio at silence boundaries before decoding each chunk. Much
+    # faster than one huge decode call for multi-sentence utterances,
+    # and accuracy stays high because splits are at natural pauses.
     segments, _info = model.transcribe(
         audio,
         language="en",
-        vad_filter=False,  # our pipeline already does endpointing
+        vad_filter=True,
+        vad_parameters={
+            "min_silence_duration_ms": 400,     # split on 400ms silences
+            "speech_pad_ms": 200,               # pad each chunk so words at
+                                                # boundaries aren't clipped
+        },
         beam_size=1,       # speed over accuracy; base.en is small
     )
     text = " ".join(s.text.strip() for s in segments).strip()
