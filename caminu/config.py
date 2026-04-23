@@ -37,7 +37,7 @@ KOKORO_MODEL_FILENAME = "kokoro-v1.0.onnx"
 KOKORO_VOICES_FILENAME = "voices.json"
 KOKORO_VOICE = "af_bella"        # one of 11 voices in voices.json
 KOKORO_SPEED = 1.0
-KOKORO_PREGAIN_DB = 6.0          # Monk Makes is a small speaker; boost output
+KOKORO_PREGAIN_DB = 9.0          # Monk Makes is a small speaker; boost output. 9 dB is ~2.8x; stays clean on Kokoro voices. Higher risks clipping on loud syllables.
 
 # Audio output sink -----------------------------------------------------------
 PULSE_OUTPUT_SINK = (
