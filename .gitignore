@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Built / downloaded artifacts (populated by install.sh on the Jetson)
+llama.cpp/
+models/gguf/
+models/kokoro/
+models/openwakeword/
+logs/
+*.wav
+!assets/*.wav
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Local ops
+scripts/deploy.sh.local
+.env
