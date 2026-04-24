@@ -1,6 +1,6 @@
 depthai>=3.5,<4
 faster-whisper>=1.0
-kokoro-onnx>=0.3
+kokoro-onnx>=0.5       # 0.5+ reads the voices-v1.0.bin format (54 voices)
 openwakeword>=0.6
 webrtcvad>=2.0
 sounddevice>=0.4
