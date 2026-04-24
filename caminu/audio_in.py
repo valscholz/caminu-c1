@@ -157,24 +157,17 @@ class AudioInput:
         stop: "threading.Event",
         abort: "threading.Event",
         min_speech_ms: int = 400,
-        min_rms: float = 60.0,
+        min_rms: float = 150.0,
     ) -> bytes:
         """Run in a worker thread during TTS playback. Detects if the user
         starts speaking while C1 is mid-reply.
 
-        Listens on the same mic stream. If it sees `min_speech_ms` of
-        sustained speech above `min_rms`, sets `abort` to signal the LLM
-        and TTS to stop, and returns the captured PCM so main.py can
-        immediately continue recording the user's interrupting utterance.
-
-        Note: C1's own voice leaks into the ReSpeaker. XVF3000 AEC reduces
-        but doesn't eliminate it. We rely on (a) the user speaking louder
-        than the echo and (b) 400 ms of sustained real speech to avoid
-        false triggers. If echo becomes a problem, add XVF3000
-        voice_active check here.
-
-        Returns b"" if `stop` is set (C1 finished speaking naturally
-        before any barge-in).
+        Gating: webrtcvad says speech + RMS above the echo residual floor,
+        sustained for min_speech_ms. We do NOT require the XVF3000
+        voice_active flag — empirically the chip gates that flag off during
+        playback (prioritizes suppressing echo over catching near-end
+        voice), so requiring it made barge-in silently impossible.
+        It's still polled + logged for diagnostics.
         """
         self._drain_queue()
         speech_ms = 0
@@ -182,12 +175,11 @@ class AudioInput:
         chunks: list[bytes] = []
         max_seen_rms = 0.0
         n_blocks = 0
-        # Cache XVF3000 voice-active readings: checked every ~100 ms
-        # (USB HID round-trip, not per-block). The chip's voice detector
-        # distinguishes "human speech" from "my own output that AEC half-
-        # suppressed", which raw RMS can't.
+        va_yes_blocks = 0
+        va_no_blocks = 0
+        va_unknown_blocks = 0
         last_va_check_ms = -100
-        chip_voice_active = False
+        chip_voice_active: Optional[bool] = None
         try:
             from . import respeaker
             tuning = respeaker.get_tuning()
@@ -204,37 +196,40 @@ class AudioInput:
             block_rms = float(np.sqrt(np.mean(block.astype(np.float32) ** 2)))
             max_seen_rms = max(max_seen_rms, block_rms)
 
-            # Poll the chip's voice-active bit every ~100 ms.
             cur_ms = n_blocks * MIC_BLOCK_MS
             if tuning is not None and cur_ms - last_va_check_ms >= 100:
                 va = tuning.voice_active()
-                chip_voice_active = bool(va) if va is not None else False
+                chip_voice_active = None if va is None else bool(va)
                 last_va_check_ms = cur_ms
+            if chip_voice_active is True:
+                va_yes_blocks += 1
+            elif chip_voice_active is False:
+                va_no_blocks += 1
+            else:
+                va_unknown_blocks += 1
 
-            # Accept as user-speech only if all three hold:
-            #  - webrtcvad thinks it's speechy
-            #  - RMS is above the echo floor
-            #  - the XVF3000 chip agrees it's real voice (if available)
             gate_ok = is_speech and block_rms >= min_rms
-            if tuning is not None:
-                gate_ok = gate_ok and chip_voice_active
 
             if gate_ok:
                 speech_ms += MIC_BLOCK_MS
                 peak_rms = max(peak_rms, block_rms)
                 chunks.append(pcm)
                 if speech_ms >= min_speech_ms:
-                    log(f"audio_in: BARGE-IN (rms={peak_rms:.0f}, speech={speech_ms}ms)")
+                    log(
+                        f"audio_in: BARGE-IN (rms={peak_rms:.0f}, "
+                        f"speech={speech_ms}ms, "
+                        f"va yes/no/?={va_yes_blocks}/{va_no_blocks}/{va_unknown_blocks})"
+                    )
                     abort.set()
                     return b"".join(chunks)
             else:
                 speech_ms = 0
                 chunks = []
                 peak_rms = 0.0
-        # On natural end, log what max RMS we ever saw so we can tune the floor.
         log(
             f"audio_in: bargein-watcher end (blocks={n_blocks}, "
-            f"max_rms_seen={max_seen_rms:.0f}, floor={min_rms:.0f})"
+            f"max_rms_seen={max_seen_rms:.0f}, floor={min_rms:.0f}, "
+            f"va yes/no/?={va_yes_blocks}/{va_no_blocks}/{va_unknown_blocks})"
         )
         return b""
 
