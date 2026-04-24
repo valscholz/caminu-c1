@@ -195,14 +195,42 @@ def main() -> int:
                     t_first_token.append(time.time())
                 speaker.feed(chunk)
 
+            # Barge-in watcher: if the user starts speaking while C1 is
+            # replying, abort Kokoro + LLM stream immediately and continue
+            # the conversation with whatever they said.
+            abort_event = threading.Event()
+            bargein_stop = threading.Event()
+            bargein_prebuf: dict[str, bytes] = {"pcm": b""}
+
+            def _bargein_worker() -> None:
+                pcm_bytes = audio.watch_for_bargein(
+                    stop=bargein_stop,
+                    abort=abort_event,
+                )
+                if pcm_bytes:
+                    bargein_prebuf["pcm"] = pcm_bytes
+                    # Also kill any audio playing *right now* — don't wait
+                    # for SentenceSpeaker to notice the abort flag.
+                    speaker.abort()
+
+            bargein_thread = threading.Thread(
+                target=_bargein_worker, daemon=True, name="bargein"
+            )
+            bargein_thread.start()
+
             t_llm_start = time.time()
+            was_aborted = False
             try:
-                reply, history = llm.chat_turn(text, history, on_text=on_text)
+                reply, history = llm.chat_turn(
+                    text, history, on_text=on_text, abort=abort_event,
+                )
                 speaker.flush()
+                was_aborted = abort_event.is_set()
                 t_llm_done = time.time()
                 first_tok = t_first_token[0] if t_first_token else t_llm_done
+                tag = " BARGEIN" if was_aborted else ""
                 log(
-                    f"main: reply={reply!r}  "
+                    f"main: reply={reply!r}{tag}  "
                     f"stt={t_stt_done-t_stt_start:.2f}s  "
                     f"llm_first_tok={first_tok-t_llm_start:.2f}s  "
                     f"llm_total={t_llm_done-t_llm_start:.2f}s  "
@@ -211,12 +239,26 @@ def main() -> int:
             finally:
                 if filler_timer is not None:
                     filler_timer.cancel()
+                # Stop the barge-in watcher if it hasn't already fired.
+                bargein_stop.set()
                 speaker.close()
+                bargein_thread.join(timeout=0.5)
 
             history = _strip_old_images(history)
             history = _trim_history(history)
-            memory.log_turn(text, reply)
+            # Log the turn with a marker if C1 was cut off mid-reply so
+            # the persistent record reflects what really happened.
+            logged_reply = reply + " [INTERRUPTED]" if was_aborted else reply
+            memory.log_turn(text, logged_reply)
             last_turn = time.time()
+
+            # If barge-in captured speech, roll straight into a new turn
+            # using that audio as the prebuffer — no wake word needed.
+            if was_aborted and bargein_prebuf["pcm"]:
+                follow_up_prebuffer = bargein_prebuf["pcm"]
+                in_follow_up = True
+                log("main: barge-in turn — rolling user speech into next turn")
+                continue
 
             # Follow-up mode: keep mic open briefly. Two gates before
             # we accept the prebuffer as "you continuing to talk":

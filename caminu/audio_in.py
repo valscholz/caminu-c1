@@ -152,6 +152,58 @@ class AudioInput:
         if muted:
             self._drain_queue()
 
+    def watch_for_bargein(
+        self,
+        stop: "threading.Event",
+        abort: "threading.Event",
+        min_speech_ms: int = 500,
+        min_rms: float = 500.0,
+    ) -> bytes:
+        """Run in a worker thread during TTS playback. Detects if the user
+        starts speaking while C1 is mid-reply.
+
+        Listens on the same mic stream. If it sees `min_speech_ms` of
+        sustained speech above `min_rms` (filters out C1's own voice
+        leaking in at low level), sets `abort` to signal the LLM / TTS
+        to stop, and returns the captured PCM so main.py can immediately
+        continue recording the user's interrupting utterance.
+
+        Returns b"" if `stop` is set (C1 finished speaking naturally
+        before any barge-in).
+        """
+        self._drain_queue()
+        speech_ms = 0
+        peak_rms = 0.0
+        chunks: list[bytes] = []
+        while not stop.is_set():
+            block = self._next_block(timeout=0.2)
+            if block is None:
+                continue
+            pcm = block.astype(np.int16).tobytes()
+            is_speech = self._vad.is_speech(pcm, MIC_SAMPLE_RATE)
+            if is_speech:
+                block_rms = float(np.sqrt(np.mean(block.astype(np.float32) ** 2)))
+                if block_rms >= min_rms:
+                    speech_ms += MIC_BLOCK_MS
+                    peak_rms = max(peak_rms, block_rms)
+                    chunks.append(pcm)
+                    if speech_ms >= min_speech_ms:
+                        log(f"audio_in: BARGE-IN (rms={peak_rms:.0f}, speech={speech_ms}ms)")
+                        abort.set()
+                        return b"".join(chunks)
+                else:
+                    # loud enough to look speechy but not loud enough to be
+                    # the user speaking into the mic — probably C1's echo
+                    # or ambient. Don't accumulate.
+                    speech_ms = 0
+                    chunks = []
+                    peak_rms = 0.0
+            else:
+                speech_ms = 0
+                chunks = []
+                peak_rms = 0.0
+        return b""
+
     def _drain_queue(self) -> None:
         try:
             while True:

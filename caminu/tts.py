@@ -178,11 +178,17 @@ class SentenceSpeaker:
         self._proc_sr: Optional[int] = None
         self._started = False
         self._first_audio_logged = False
+        self._aborted = False
+        # Exposed for main.py to monitor: True once any audio has actually
+        # left the speaker (not just queued).
+        self.audio_started = threading.Event()
 
     # ---- producer side (called from the LLM token callback) ----
 
     def feed(self, chunk: str) -> None:
         """Append streamed tokens; emit any completed sentences."""
+        if self._aborted:
+            return  # drop anything that arrives after abort
         if not self._started:
             self._started = True
             self._worker.start()
@@ -220,6 +226,37 @@ class SentenceSpeaker:
                 pass
             self._proc = None
             self._proc_sr = None
+
+    def abort(self) -> None:
+        """Kill in-flight synthesis + playback immediately (barge-in path).
+
+        Drops all queued sentences, kills the aplay+ffmpeg chain without
+        waiting for the buffer to drain, and flags the speaker as aborted
+        so any late feed() calls are ignored.
+        """
+        self._aborted = True
+        # Drain any pending sentences so the worker doesn't keep synthing.
+        try:
+            while True:
+                self._queue.get_nowait()
+        except Exception:
+            pass
+        # Tell the worker to exit.
+        self._queue.put(None)
+        # Kill the active playback pipe NOW — don't wait for the ALSA
+        # buffer to drain naturally, that takes 1-2s.
+        if self._proc is not None:
+            try:
+                self._proc.kill()
+            except Exception:
+                pass
+            try:
+                self._proc.wait(timeout=0.5)
+            except Exception:
+                pass
+            self._proc = None
+            self._proc_sr = None
+        log("tts: ABORTED (barge-in)")
 
     # ---- consumer side (worker thread) ----
 

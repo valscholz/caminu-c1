@@ -8,6 +8,7 @@ with content tokens).
 """
 from __future__ import annotations
 import json
+import threading
 from typing import Any, Callable, Iterator, Optional
 
 import requests
@@ -61,14 +62,23 @@ def _iter_sse(response: requests.Response) -> Iterator[dict]:
             continue
 
 
-def _call_streaming(messages: list[dict], on_text: OnTextFn) -> dict:
+def _call_streaming(
+    messages: list[dict],
+    on_text: OnTextFn,
+    abort: Optional[threading.Event] = None,
+) -> dict:
     """Stream tokens from llama-server; fire on_text for every content delta.
 
     Returns a reconstructed assistant message compatible with the blocking
     path: {"role": "assistant", "content": str, "tool_calls": [...] }.
+
+    If `abort` is set mid-stream (barge-in), closes the connection and
+    returns the partial content collected so far, marked with
+    {"aborted": True} so the caller can render it as an interruption stub.
     """
     content_parts: list[str] = []
     tool_calls_by_idx: dict[int, dict] = {}
+    was_aborted = False
 
     with requests.post(
         f"{LLAMA_URL}/v1/chat/completions",
@@ -78,6 +88,10 @@ def _call_streaming(messages: list[dict], on_text: OnTextFn) -> dict:
     ) as r:
         r.raise_for_status()
         for event in _iter_sse(r):
+            if abort is not None and abort.is_set():
+                was_aborted = True
+                r.close()
+                break
             choice = (event.get("choices") or [{}])[0]
             delta = choice.get("delta") or {}
 
@@ -108,6 +122,8 @@ def _call_streaming(messages: list[dict], on_text: OnTextFn) -> dict:
     }
     if tool_calls_by_idx:
         msg["tool_calls"] = [tool_calls_by_idx[k] for k in sorted(tool_calls_by_idx)]
+    if was_aborted:
+        msg["aborted"] = True
     return msg
 
 
@@ -158,9 +174,12 @@ def chat_turn(
     user_text: str,
     history: list[dict],
     on_text: Optional[OnTextFn] = None,
+    abort: Optional[threading.Event] = None,
 ) -> tuple[str, list[dict]]:
     """Run one user turn (incl. tool hops). If `on_text` is given, stream
-    content tokens to it as they arrive.
+    content tokens to it as they arrive. If `abort` is set mid-stream,
+    we close the stream early; the returned assistant message will have
+    {'aborted': True} set so callers can detect barge-in.
 
     Returns (full_reply_text, new_history).
     """
@@ -180,8 +199,10 @@ def chat_turn(
         if on_text is None:
             msg = _call_blocking(messages)
         else:
-            msg = _call_streaming(messages, on_text)
+            msg = _call_streaming(messages, on_text, abort=abort)
         messages.append(msg)
+        if msg.get("aborted"):
+            return (msg.get("content") or "").strip(), messages
         calls = msg.get("tool_calls") or []
 
         if not calls:
