@@ -34,9 +34,11 @@ MAX_UTTERANCE_S = 15             # hard cap on a single user turn
 # than waiting for VAD silence and robust to ambient noise (chewing, fans)
 # that webrtcvad flags as speech.
 SEMANTIC_ENDPOINT_ENABLED = True
-SEMANTIC_POLL_MS = 500           # how often to re-transcribe the rolling buffer
-SEMANTIC_STABLE_MS = 700         # text unchanged for this long = user done
-SEMANTIC_MIN_AUDIO_MS = 600      # don't start polling until we have >= this much audio
+# Retuned to actually beat VAD silence (500 ms) on normal turns.
+# Semantic path can now win in 300 + 400 = 700 ms of audio.
+SEMANTIC_POLL_MS = 300           # re-transcribe every 300 ms
+SEMANTIC_STABLE_MS = 400         # text unchanged for 400 ms = user done
+SEMANTIC_MIN_AUDIO_MS = 400      # start polling after 400 ms of audio
 
 # Follow-up mode detector: stricter than normal VAD so ambient noise / breath
 # doesn't re-open the mic. Only the window-length is set in FOLLOW_UP_WINDOW_S
@@ -122,8 +124,11 @@ PULSE_OUTPUT_SINK = (
 
 # Camera (OAK-D W) ------------------------------------------------------------
 CAMERA_WARMUP_S = 2.0
-CAMERA_CAPTURE_WIDTH = 1280
-CAMERA_CAPTURE_HEIGHT = 720
+# 600 px long edge is plenty for VLM questions like "what do you see / am I
+# holding". Smaller image = much less mmproj activation memory during vision
+# turns (quadratic in pixel count) and faster vision encoding.
+CAMERA_CAPTURE_WIDTH = 640
+CAMERA_CAPTURE_HEIGHT = 360
 CAMERA_JPEG_QUALITY = 85
 
 # Conversation memory ---------------------------------------------------------
