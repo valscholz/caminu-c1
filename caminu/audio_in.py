@@ -157,24 +157,35 @@ class AudioInput:
         stop: "threading.Event",
         abort: "threading.Event",
         min_speech_ms: int = 400,
-        min_rms: float = 150.0,
+        rms_ratio: float = 2.2,
+        rms_floor_abs: float = 90.0,
+        baseline_window_blocks: int = 25,
+        baseline_warmup_blocks: int = 10,
     ) -> bytes:
         """Run in a worker thread during TTS playback. Detects if the user
         starts speaking while C1 is mid-reply.
 
-        Gating: webrtcvad says speech + RMS above the echo residual floor,
-        sustained for min_speech_ms. We do NOT require the XVF3000
-        voice_active flag — empirically the chip gates that flag off during
-        playback (prioritizes suppressing echo over catching near-end
-        voice), so requiring it made barge-in silently impossible.
-        It's still polled + logged for diagnostics.
+        Uses an adaptive baseline rather than a fixed RMS floor: we track
+        the rolling median RMS over the last ~500 ms (= the current echo
+        residual level), and only trigger when a block is at least
+        `rms_ratio`x the baseline AND above a small absolute floor (to
+        reject near-silence). User's voice typically adds 2-3x on top of
+        residual, so this catches normal-volume interrupts without
+        requiring the user to shout.
+
+        Also requires webrtcvad speech-shape agreement, sustained for
+        min_speech_ms. XVF3000 voice_active flag is polled for diagnostics
+        only (it gates off during playback).
         """
+        from collections import deque
         self._drain_queue()
         speech_ms = 0
         peak_rms = 0.0
+        peak_ratio = 0.0
         chunks: list[bytes] = []
         max_seen_rms = 0.0
         n_blocks = 0
+        baseline_hist: deque = deque(maxlen=baseline_window_blocks)
         va_yes_blocks = 0
         va_no_blocks = 0
         va_unknown_blocks = 0
@@ -208,15 +219,31 @@ class AudioInput:
             else:
                 va_unknown_blocks += 1
 
-            gate_ok = is_speech and block_rms >= min_rms
+            # Baseline = median of the rolling window BEFORE this block.
+            # Before warmup completes, skip the ratio check entirely so we
+            # don't false-trigger on the initial cold-start silence.
+            baseline = float(np.median(baseline_hist)) if baseline_hist else 0.0
+            baseline_hist.append(block_rms)
+
+            if n_blocks < baseline_warmup_blocks:
+                gate_ok = False
+            else:
+                ratio = block_rms / baseline if baseline > 1.0 else float("inf")
+                gate_ok = (
+                    is_speech
+                    and block_rms >= rms_floor_abs
+                    and ratio >= rms_ratio
+                )
 
             if gate_ok:
                 speech_ms += MIC_BLOCK_MS
                 peak_rms = max(peak_rms, block_rms)
+                peak_ratio = max(peak_ratio, block_rms / max(baseline, 1.0))
                 chunks.append(pcm)
                 if speech_ms >= min_speech_ms:
                     log(
                         f"audio_in: BARGE-IN (rms={peak_rms:.0f}, "
+                        f"baseline≈{baseline:.0f}, ratio={peak_ratio:.1f}x, "
                         f"speech={speech_ms}ms, "
                         f"va yes/no/?={va_yes_blocks}/{va_no_blocks}/{va_unknown_blocks})"
                     )
@@ -226,9 +253,12 @@ class AudioInput:
                 speech_ms = 0
                 chunks = []
                 peak_rms = 0.0
+                peak_ratio = 0.0
+        final_baseline = float(np.median(baseline_hist)) if baseline_hist else 0.0
         log(
             f"audio_in: bargein-watcher end (blocks={n_blocks}, "
-            f"max_rms_seen={max_seen_rms:.0f}, floor={min_rms:.0f}, "
+            f"max_rms={max_seen_rms:.0f}, "
+            f"final_baseline≈{final_baseline:.0f}, "
             f"va yes/no/?={va_yes_blocks}/{va_no_blocks}/{va_unknown_blocks})"
         )
         return b""
