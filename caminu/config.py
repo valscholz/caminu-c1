@@ -23,7 +23,7 @@ WAKE_COOLDOWN_S = 2.0     # after a trigger, ignore further wakes for this long
 WAKE_MODE = "wake_word"
 
 # VAD / endpointing -----------------------------------------------------------
-VAD_AGGRESSIVENESS = 2           # 0..3 (webrtcvad)
+VAD_AGGRESSIVENESS = 3           # 0..3 — 3 is strictest; less likely to flag ambient/breath as speech and extend the turn forever.
 VAD_SILENCE_END_MS = 500         # end turn after this much silence. 300ms cut users off mid-sentence.
 VAD_MIN_SPEECH_MS = 300          # must have heard at least this much speech
 MAX_UTTERANCE_S = 15             # hard cap on a single user turn
