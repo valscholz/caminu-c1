@@ -62,7 +62,7 @@ LLAMA_MAX_NEW_TOKENS = 200
 # TTS (Kokoro) ----------------------------------------------------------------
 KOKORO_MODEL_FILENAME = "kokoro-v1.0.onnx"
 KOKORO_VOICES_FILENAME = "voices-v1.0.bin"   # v1.0 bin has 54 voices (vs 11 in voices.json). Needs kokoro-onnx >= 0.4.
-KOKORO_VOICE = "af_heart"        # the premium v1.0 voice — noticeably more natural than af_bella
+KOKORO_VOICE = "bm_fable"        # British male, lower register. A/B tested against af_heart and af_jessica — sounds more present, less "generic assistant," fits the C-3PO-style persona better.
 KOKORO_SPEED = 1.0
 KOKORO_PREGAIN_DB = 9.0          # Monk Makes is a small speaker; boost output. 9 dB is ~2.8x; stays clean on Kokoro voices. Higher risks clipping on loud syllables.
 KOKORO_USE_CUDA = True           # GPU inference ~3x faster than CPU. Safe now that context=4K and old images are stripped from history — the mmproj OOM we hit earlier doesn't reproduce with those fixes.
