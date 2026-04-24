@@ -21,6 +21,8 @@ import numpy as np
 
 from .config import (
     ALSA_OUTPUT_DEVICE,
+    AUDIO_POST_ENABLED,
+    AUDIO_POST_FILTER,
     KOKORO_DIR,
     KOKORO_MODEL_FILENAME,
     KOKORO_PREGAIN_DB,
@@ -90,14 +92,31 @@ def _synthesize(text: str) -> tuple[bytes, int]:
 
 
 def _aplay_process(sample_rate: int) -> subprocess.Popen:
-    """aplay reads raw s16le mono from stdin and writes to the ReSpeaker ALSA
-    device directly. We bypass PulseAudio for output because PA loses the
-    card from its sink list once sounddevice has the ALSA device open
-    exclusively for input."""
+    """Play raw s16le mono audio. Optionally pipes through ffmpeg first
+    for speech-presence EQ + de-esser + gentle compression to make the
+    small Monk Makes speaker sound more 'produced' (see config).
+
+    We bypass PulseAudio because PA loses the ReSpeaker card from its
+    sink list once sounddevice has the ALSA device open for input.
+    """
+    if AUDIO_POST_ENABLED:
+        # ffmpeg reads raw s16le from stdin, applies the filter chain,
+        # writes raw s16le to stdout -> pipe -> aplay.
+        # We spawn both as one shell pipeline via bash -c for simplicity
+        # and so ffmpeg's stderr doesn't clutter journald.
+        cmd = (
+            f"ffmpeg -hide_banner -loglevel error "
+            f"-f s16le -ar {sample_rate} -ac 1 -i - "
+            f"-af '{AUDIO_POST_FILTER}' "
+            f"-f s16le -ar {sample_rate} -ac 1 - "
+            f"| aplay -q -D {ALSA_OUTPUT_DEVICE} -t raw -f S16_LE -r {sample_rate} -c 1"
+        )
+        return subprocess.Popen(["/bin/bash", "-c", cmd], stdin=subprocess.PIPE)
+
     return subprocess.Popen(
         [
             "aplay",
-            "-q",                   # quiet: no startup banner
+            "-q",
             "-D", ALSA_OUTPUT_DEVICE,
             "-t", "raw",
             "-f", "S16_LE",
