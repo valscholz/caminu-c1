@@ -62,7 +62,7 @@ LLAMA_MAX_NEW_TOKENS = 200
 # TTS (Kokoro) ----------------------------------------------------------------
 KOKORO_MODEL_FILENAME = "kokoro-v1.0.onnx"
 KOKORO_VOICES_FILENAME = "voices-v1.0.bin"   # v1.0 bin has 54 voices (vs 11 in voices.json). Needs kokoro-onnx >= 0.4.
-KOKORO_VOICE = "bm_fable"        # British male, lower register. A/B tested against af_heart and af_jessica — sounds more present, less "generic assistant," fits the C-3PO-style persona better.
+KOKORO_VOICE = "af_heart"        # A/B with post-processing on: comparing against bm_fable at lower register.
 
 # Audio post-processing via ffmpeg filter chain before aplay. Makes the
 # Monk Makes speaker sound noticeably more "produced": high-pass cuts sub-
