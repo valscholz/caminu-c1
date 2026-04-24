@@ -12,7 +12,12 @@ mkdir -p logs
 export PATH=/usr/local/cuda-12.6/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64:${LD_LIBRARY_PATH:-}
 
-GGUF="models/gguf/gemma-4-E2B-it-Q4_K_M.gguf"
+# Gemma 4 E2B quant:
+#   Q4_K_M (2.9 GB) = default, highest quality
+#   Q3_K_M (2.4 GB) = ~500 MB less memory, small quality hit — enables
+#                     mmproj vision turns without OOM on 8 GB Orin Nano
+# Override via: export GEMMA_GGUF=/path/to/model.gguf
+GGUF="${GEMMA_GGUF:-models/gguf/gemma-4-E2B-it-Q3_K_M.gguf}"
 MMPROJ="models/gguf/mmproj-F16.gguf"
 
 for f in "$GGUF" "$MMPROJ" llama.cpp/build/bin/llama-server; do

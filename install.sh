@@ -139,6 +139,10 @@ dl() {
   wget -q --show-progress -O "$dest.part" "$url"
   mv "$dest.part" "$dest"
 }
+dl https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q3_K_M.gguf \
+   models/gguf/gemma-4-E2B-it-Q3_K_M.gguf
+# Keep Q4_K_M as a fallback for anyone who wants maximum quality + has RAM
+# headroom (set GEMMA_GGUF env var in run.sh to use it).
 dl https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf \
    models/gguf/gemma-4-E2B-it-Q4_K_M.gguf
 dl https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf \
