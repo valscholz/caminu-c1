@@ -189,6 +189,13 @@ class AudioInput:
         va_yes_blocks = 0
         va_no_blocks = 0
         va_unknown_blocks = 0
+        # Per-gate diagnostic counters: how often each gate was the one
+        # blocking. If a block fails >1 gate, the first failure in this
+        # order gets counted: is_speech, rms_abs, ratio.
+        fail_is_speech = 0
+        fail_rms_floor = 0
+        fail_ratio = 0
+        pass_all = 0
         last_va_check_ms = -100
         chip_voice_active: Optional[bool] = None
         try:
@@ -229,11 +236,18 @@ class AudioInput:
                 gate_ok = False
             else:
                 ratio = block_rms / baseline if baseline > 1.0 else float("inf")
-                gate_ok = (
-                    is_speech
-                    and block_rms >= rms_floor_abs
-                    and ratio >= rms_ratio
-                )
+                if not is_speech:
+                    fail_is_speech += 1
+                    gate_ok = False
+                elif block_rms < rms_floor_abs:
+                    fail_rms_floor += 1
+                    gate_ok = False
+                elif ratio < rms_ratio:
+                    fail_ratio += 1
+                    gate_ok = False
+                else:
+                    pass_all += 1
+                    gate_ok = True
 
             if gate_ok:
                 speech_ms += MIC_BLOCK_MS
@@ -259,6 +273,8 @@ class AudioInput:
             f"audio_in: bargein-watcher end (blocks={n_blocks}, "
             f"max_rms={max_seen_rms:.0f}, "
             f"final_baseline≈{final_baseline:.0f}, "
+            f"fail is_speech/rms/ratio={fail_is_speech}/{fail_rms_floor}/{fail_ratio}, "
+            f"pass_all={pass_all}, "
             f"va yes/no/?={va_yes_blocks}/{va_no_blocks}/{va_unknown_blocks})"
         )
         return b""
