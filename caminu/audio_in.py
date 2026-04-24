@@ -21,6 +21,10 @@ from .config import (
     MIC_DEVICE_SUBSTRING,
     MIC_SAMPLE_RATE,
     MIC_USE_CHANNEL,
+    SEMANTIC_ENDPOINT_ENABLED,
+    SEMANTIC_MIN_AUDIO_MS,
+    SEMANTIC_POLL_MS,
+    SEMANTIC_STABLE_MS,
     VAD_AGGRESSIVENESS,
     VAD_MIN_SPEECH_MS,
     VAD_SILENCE_END_MS,
@@ -226,12 +230,23 @@ class AudioInput:
                 last_trigger = time.time()
                 return
 
-    def record_utterance(self, prebuffer: bytes = b"") -> bytes:
-        """Record PCM until VAD silence endpoint or MAX_UTTERANCE_S.
+    def record_utterance(
+        self,
+        prebuffer: bytes = b"",
+        transcribe_fn=None,
+    ) -> bytes:
+        """Record PCM until we detect the user is done.
 
-        If `prebuffer` is supplied (e.g. from wait_for_speech when it detected
-        the user already starting to speak), it's prepended to the captured
-        audio so the first syllables aren't lost.
+        End conditions, any of which stops recording:
+        - VAD silence >= VAD_SILENCE_END_MS after speech started (classic path)
+        - Semantic endpoint: transcribe_fn(pcm_so_far) returns the same text
+          for SEMANTIC_STABLE_MS (enabled via transcribe_fn + SEMANTIC_ENDPOINT_ENABLED)
+        - MAX_UTTERANCE_S hard cap
+
+        If `transcribe_fn` is provided and SEMANTIC_ENDPOINT_ENABLED, we
+        re-transcribe the rolling buffer every SEMANTIC_POLL_MS and stop
+        when the transcript stops growing. This is much faster than
+        VAD silence and robust to ambient noise that VAD flags as speech.
         """
         log("audio_in: recording utterance...")
         self._drain_queue()
@@ -241,9 +256,13 @@ class AudioInput:
         total_ms = 0
         speaking_started = bool(prebuffer)
         if prebuffer:
-            # Assume the prebuffer already contains a chunk of speech, so we're
-            # past the min-speech threshold.
             speech_ms = VAD_MIN_SPEECH_MS
+
+        # Semantic endpointing state
+        use_semantic = transcribe_fn is not None and SEMANTIC_ENDPOINT_ENABLED
+        last_text = ""
+        last_change_ms = 0
+        last_poll_ms = 0
 
         while total_ms < MAX_UTTERANCE_S * 1000:
             block = self._next_block()
@@ -260,8 +279,33 @@ class AudioInput:
             else:
                 silence_ms += MIC_BLOCK_MS
                 if speaking_started and silence_ms >= VAD_SILENCE_END_MS:
+                    log(f"audio_in: end-by-vad (silence {silence_ms}ms)")
                     break
             total_ms += MIC_BLOCK_MS
+
+            # Semantic endpointing: re-transcribe on a schedule.
+            if (
+                use_semantic
+                and speaking_started
+                and total_ms >= SEMANTIC_MIN_AUDIO_MS
+                and total_ms - last_poll_ms >= SEMANTIC_POLL_MS
+            ):
+                last_poll_ms = total_ms
+                try:
+                    text = transcribe_fn(b"".join(chunks)) or ""
+                except Exception as e:
+                    log(f"audio_in: semantic transcribe failed: {e}")
+                    continue
+                text = text.strip()
+                if text != last_text:
+                    last_text = text
+                    last_change_ms = total_ms
+                elif text and (total_ms - last_change_ms) >= SEMANTIC_STABLE_MS:
+                    log(
+                        f"audio_in: end-by-semantic (stable {total_ms - last_change_ms}ms, "
+                        f"text={text!r})"
+                    )
+                    break
 
         pcm_all = b"".join(chunks)
         log(f"audio_in: captured {total_ms} ms (speech {speech_ms} ms)")

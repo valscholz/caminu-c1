@@ -155,7 +155,13 @@ def main() -> int:
                 history = []
 
             t_stop_speaking = time.time()
-            pcm = audio.record_utterance(prebuffer=follow_up_prebuffer)
+            # Pass Moonshine as the semantic-endpoint transcriber so
+            # record_utterance can stop early when the user's words stop
+            # growing. Falls back to VAD silence if the user trails off.
+            pcm = audio.record_utterance(
+                prebuffer=follow_up_prebuffer,
+                transcribe_fn=stt.transcribe_pcm16,
+            )
             t_stt_start = time.time()
             follow_up_prebuffer = b""
             text = stt.transcribe_pcm16(pcm)
