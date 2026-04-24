@@ -89,6 +89,13 @@ class AudioInput:
 
         self._sd = sd
         self._vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
+        # Dedicated lenient VAD for barge-in detection. Main VAD uses
+        # agg=3 to correctly reject eating/background noise on the
+        # primary recording path, but agg=3 also rejects echo-corrupted
+        # user speech during TTS playback (AEC artifacts mess up the
+        # speech shape). Agg=1 is forgiving enough to accept user voice
+        # that the AEC has half-scrubbed.
+        self._vad_bargein = webrtcvad.Vad(1)
         self._wake_mode = WAKE_MODE
         # Lazy-load openWakeWord only if we're actually going to use it.
         # Saves ~150 MB RAM in VAD-only mode.
@@ -210,7 +217,7 @@ class AudioInput:
                 continue
             n_blocks += 1
             pcm = block.astype(np.int16).tobytes()
-            is_speech = self._vad.is_speech(pcm, MIC_SAMPLE_RATE)
+            is_speech = self._vad_bargein.is_speech(pcm, MIC_SAMPLE_RATE)
             block_rms = float(np.sqrt(np.mean(block.astype(np.float32) ** 2)))
             max_seen_rms = max(max_seen_rms, block_rms)
 
