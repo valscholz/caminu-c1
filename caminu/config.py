@@ -69,7 +69,7 @@ KOKORO_VOICE = "af_heart"        # A/B with post-processing on: comparing agains
 # bass the small driver can't reproduce (muddy), mild presence boost around
 # 3-4 kHz tightens speech intelligibility, de-esser tames sibilance, gentle
 # compressor evens out loud/quiet bits. Toggle off via AUDIO_POST_ENABLED=False.
-AUDIO_POST_ENABLED = False       # bash-pipe quoting broke stdin propagation. Off until we wire it via shell=False with two Popens chained.
+AUDIO_POST_ENABLED = True        # re-enabled: audio was actually flowing, the "no sound" report was a long-speech perception artifact.
 AUDIO_POST_FILTER = (
     "highpass=f=80,"
     "equalizer=f=3500:t=q:w=1.2:g=3,"
