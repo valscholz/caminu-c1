@@ -157,7 +157,7 @@ class AudioInput:
         stop: "threading.Event",
         abort: "threading.Event",
         min_speech_ms: int = 400,
-        min_rms: float = 200.0,
+        min_rms: float = 60.0,
     ) -> bytes:
         """Run in a worker thread during TTS playback. Detects if the user
         starts speaking while C1 is mid-reply.
@@ -182,6 +182,18 @@ class AudioInput:
         chunks: list[bytes] = []
         max_seen_rms = 0.0
         n_blocks = 0
+        # Cache XVF3000 voice-active readings: checked every ~100 ms
+        # (USB HID round-trip, not per-block). The chip's voice detector
+        # distinguishes "human speech" from "my own output that AEC half-
+        # suppressed", which raw RMS can't.
+        last_va_check_ms = -100
+        chip_voice_active = False
+        try:
+            from . import respeaker
+            tuning = respeaker.get_tuning()
+        except Exception:
+            tuning = None
+
         while not stop.is_set():
             block = self._next_block(timeout=0.1)
             if block is None:
@@ -191,7 +203,23 @@ class AudioInput:
             is_speech = self._vad.is_speech(pcm, MIC_SAMPLE_RATE)
             block_rms = float(np.sqrt(np.mean(block.astype(np.float32) ** 2)))
             max_seen_rms = max(max_seen_rms, block_rms)
-            if is_speech and block_rms >= min_rms:
+
+            # Poll the chip's voice-active bit every ~100 ms.
+            cur_ms = n_blocks * MIC_BLOCK_MS
+            if tuning is not None and cur_ms - last_va_check_ms >= 100:
+                va = tuning.voice_active()
+                chip_voice_active = bool(va) if va is not None else False
+                last_va_check_ms = cur_ms
+
+            # Accept as user-speech only if all three hold:
+            #  - webrtcvad thinks it's speechy
+            #  - RMS is above the echo floor
+            #  - the XVF3000 chip agrees it's real voice (if available)
+            gate_ok = is_speech and block_rms >= min_rms
+            if tuning is not None:
+                gate_ok = gate_ok and chip_voice_active
+
+            if gate_ok:
                 speech_ms += MIC_BLOCK_MS
                 peak_rms = max(peak_rms, block_rms)
                 chunks.append(pcm)
