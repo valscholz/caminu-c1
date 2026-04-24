@@ -24,13 +24,11 @@ WAKE_MODE = "wake_word"
 
 # VAD / endpointing -----------------------------------------------------------
 VAD_AGGRESSIVENESS = 3           # 0..3 — 3 is strictest; less likely to flag ambient/breath as speech and extend the turn forever.
-# VAD is now the SAFETY NET for when semantic fails. Semantic endpoint
-# (400 ms stable text) normally wins first. Longer VAD silence means:
-#  - noise/eating/ambient doesn't prematurely cut users off
-#  - semantic gets the chance to fire on every turn it can
-#  - if semantic fails to stabilize (low-confidence STT on messy audio),
-#    VAD catches it at 1s silence instead of hanging to the 15s cap
-VAD_SILENCE_END_MS = 1000
+# 500 ms is the known-good feel from yesterday. Semantic endpointing is
+# still enabled below as a second termination path — it fires when
+# Moonshine transcript stops growing for 400 ms, independent of VAD.
+# Whichever fires first ends the turn.
+VAD_SILENCE_END_MS = 500
 VAD_MIN_SPEECH_MS = 300          # must have heard at least this much speech
 MAX_UTTERANCE_S = 15             # hard cap on a single user turn
 
