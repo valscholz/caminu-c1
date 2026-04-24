@@ -156,17 +156,22 @@ class AudioInput:
         self,
         stop: "threading.Event",
         abort: "threading.Event",
-        min_speech_ms: int = 500,
-        min_rms: float = 500.0,
+        min_speech_ms: int = 400,
+        min_rms: float = 200.0,
     ) -> bytes:
         """Run in a worker thread during TTS playback. Detects if the user
         starts speaking while C1 is mid-reply.
 
         Listens on the same mic stream. If it sees `min_speech_ms` of
-        sustained speech above `min_rms` (filters out C1's own voice
-        leaking in at low level), sets `abort` to signal the LLM / TTS
-        to stop, and returns the captured PCM so main.py can immediately
-        continue recording the user's interrupting utterance.
+        sustained speech above `min_rms`, sets `abort` to signal the LLM
+        and TTS to stop, and returns the captured PCM so main.py can
+        immediately continue recording the user's interrupting utterance.
+
+        Note: C1's own voice leaks into the ReSpeaker. XVF3000 AEC reduces
+        but doesn't eliminate it. We rely on (a) the user speaking louder
+        than the echo and (b) 400 ms of sustained real speech to avoid
+        false triggers. If echo becomes a problem, add XVF3000
+        voice_active check here.
 
         Returns b"" if `stop` is set (C1 finished speaking naturally
         before any barge-in).
@@ -175,33 +180,34 @@ class AudioInput:
         speech_ms = 0
         peak_rms = 0.0
         chunks: list[bytes] = []
+        max_seen_rms = 0.0
+        n_blocks = 0
         while not stop.is_set():
-            block = self._next_block(timeout=0.2)
+            block = self._next_block(timeout=0.1)
             if block is None:
                 continue
+            n_blocks += 1
             pcm = block.astype(np.int16).tobytes()
             is_speech = self._vad.is_speech(pcm, MIC_SAMPLE_RATE)
-            if is_speech:
-                block_rms = float(np.sqrt(np.mean(block.astype(np.float32) ** 2)))
-                if block_rms >= min_rms:
-                    speech_ms += MIC_BLOCK_MS
-                    peak_rms = max(peak_rms, block_rms)
-                    chunks.append(pcm)
-                    if speech_ms >= min_speech_ms:
-                        log(f"audio_in: BARGE-IN (rms={peak_rms:.0f}, speech={speech_ms}ms)")
-                        abort.set()
-                        return b"".join(chunks)
-                else:
-                    # loud enough to look speechy but not loud enough to be
-                    # the user speaking into the mic — probably C1's echo
-                    # or ambient. Don't accumulate.
-                    speech_ms = 0
-                    chunks = []
-                    peak_rms = 0.0
+            block_rms = float(np.sqrt(np.mean(block.astype(np.float32) ** 2)))
+            max_seen_rms = max(max_seen_rms, block_rms)
+            if is_speech and block_rms >= min_rms:
+                speech_ms += MIC_BLOCK_MS
+                peak_rms = max(peak_rms, block_rms)
+                chunks.append(pcm)
+                if speech_ms >= min_speech_ms:
+                    log(f"audio_in: BARGE-IN (rms={peak_rms:.0f}, speech={speech_ms}ms)")
+                    abort.set()
+                    return b"".join(chunks)
             else:
                 speech_ms = 0
                 chunks = []
                 peak_rms = 0.0
+        # On natural end, log what max RMS we ever saw so we can tune the floor.
+        log(
+            f"audio_in: bargein-watcher end (blocks={n_blocks}, "
+            f"max_rms_seen={max_seen_rms:.0f}, floor={min_rms:.0f})"
+        )
         return b""
 
     def _drain_queue(self) -> None:
