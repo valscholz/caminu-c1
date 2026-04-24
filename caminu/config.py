@@ -24,7 +24,13 @@ WAKE_MODE = "wake_word"
 
 # VAD / endpointing -----------------------------------------------------------
 VAD_AGGRESSIVENESS = 3           # 0..3 — 3 is strictest; less likely to flag ambient/breath as speech and extend the turn forever.
-VAD_SILENCE_END_MS = 500         # end turn after this much silence. 300ms cut users off mid-sentence.
+# VAD is now the SAFETY NET for when semantic fails. Semantic endpoint
+# (400 ms stable text) normally wins first. Longer VAD silence means:
+#  - noise/eating/ambient doesn't prematurely cut users off
+#  - semantic gets the chance to fire on every turn it can
+#  - if semantic fails to stabilize (low-confidence STT on messy audio),
+#    VAD catches it at 1s silence instead of hanging to the 15s cap
+VAD_SILENCE_END_MS = 1000
 VAD_MIN_SPEECH_MS = 300          # must have heard at least this much speech
 MAX_UTTERANCE_S = 15             # hard cap on a single user turn
 
